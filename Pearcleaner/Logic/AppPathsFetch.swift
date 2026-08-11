@@ -672,6 +672,10 @@ class AppPathFinder {
                 self.formattedAppExclusionList.contains(where: { normalizedPath.contains($0) })
             }
 
+            // Deletion safety net: never offer protected roots or user-content
+            // paths, regardless of which search surfaced them
+            tempCollection.removeAll { self.locations.isProtectedFromDeletion($0) }
+
             let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
             var filteredCollection: [URL] = []
             for url in sortedCollection {
@@ -719,6 +723,10 @@ class AppPathFinder {
             return formattedAppExclusionList.contains(normalizedPath) ||
                    formattedAppExclusionList.contains(where: { normalizedPath.contains($0) })
         }
+
+        // Deletion safety net: never offer protected roots or user-content
+        // paths, regardless of which search surfaced them
+        tempCollection.removeAll { self.locations.isProtectedFromDeletion($0) }
 
         let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
         var filteredCollection: [URL] = []

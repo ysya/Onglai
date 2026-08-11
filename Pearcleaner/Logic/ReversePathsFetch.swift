@@ -126,6 +126,10 @@ class ReversePathsSearcher {
     }
 
     private func processItemStreaming(_ scannedItemName: String, scannedItemURL: URL, batch: inout [(url: URL, size: Int64, icon: NSImage?)], batchSize: Int) async {
+        // Deletion safety net: protected roots and user-content paths are
+        // never orphaned-file candidates
+        if locations.isProtectedFromDeletion(scannedItemURL) { return }
+
         let normalizedItemPath = scannedItemURL.standardizedFileURL.path.pearFormat()
 
         if formattedExclusionList.contains(normalizedItemPath) || normalizedItemPath.contains("dsstore") || normalizedItemPath.contains("daemonnameoridentifierhere") || formattedExclusionList.first(where: { normalizedItemPath.contains($0) }) != nil {
@@ -211,6 +215,10 @@ class ReversePathsSearcher {
     }
 
     private func processItem(_ scannedItemName: String, scannedItemURL: URL) {
+        // Deletion safety net: protected roots and user-content paths are
+        // never orphaned-file candidates
+        if locations.isProtectedFromDeletion(scannedItemURL) { return }
+
         let normalizedItemPath = scannedItemURL.standardizedFileURL.path.pearFormat()
 
         if formattedExclusionList.contains(normalizedItemPath) || normalizedItemPath.contains("dsstore") || normalizedItemPath.contains("daemonnameoridentifierhere") || formattedExclusionList.first(where: { normalizedItemPath.contains($0) }) != nil {

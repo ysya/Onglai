@@ -43,12 +43,33 @@ class Locations: ObservableObject {
         "Frameworks"
     ]
 
+    // Standard user-content folders: everything inside them is user data, not
+    // app residue. Nothing under these may be offered for deletion by the app
+    // or orphan scans; the sole exception is .app launchers on the Desktop
+    // (Steam shortcuts), which the app file search intentionally targets.
+    static let userContentRoots: [String] = [
+        "\(home)/Desktop",
+        "\(home)/Documents",
+        "\(home)/Downloads",
+        "\(home)/Movies",
+        "\(home)/Music",
+        "\(home)/Pictures",
+        "\(home)/Public",
+    ]
+
     let cacheDir: String
     let tempDir: String
 
     var apps: Category
     var reverse: Category
     var plugins: PluginCategory
+
+    // Exact paths that may never become deletion candidates no matter how well
+    // their names match an app: the home folder itself, the user-content roots
+    // and every static scan root. The dynamically appended Application Support
+    // subfolders are deliberately excluded, since removing
+    // ~/Library/Application Support/<AppName> itself is legitimate.
+    let protectedRoots: Set<String>
 
     init() {
         let (cacheDir, tempDir) = darwinCT()
@@ -120,6 +141,10 @@ class Locations: ObservableObject {
             cacheDir,
             tempDir
         ])
+
+        // Snapshot the static scan roots for the deletion safety net before the
+        // dynamic Application Support subfolders are appended below.
+        let staticAppScanRoots = self.apps.paths
 
         // Append Application Support subfolders for deeper search
         let subfolders = listAppSupportDirectories()
@@ -273,5 +298,29 @@ class Locations: ObservableObject {
                 "\(home)/Library/Widgets"
             ]
         ])
+
+        var protected = Set(staticAppScanRoots)
+        protected.formUnion(self.reverse.paths)
+        protected.formUnion(Locations.userContentRoots)
+        protected.insert(home)
+        self.protectedRoots = protected
+    }
+
+    // Deletion safety net: rejects exact protected roots and anything inside
+    // the user-content folders, no matter which scan surfaced the path.
+    // Defense in depth against overly fuzzy name matching (upstream issues
+    // #553, #587, #571).
+    func isProtectedFromDeletion(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        if protectedRoots.contains(path) { return true }
+        for root in Locations.userContentRoots {
+            guard path.hasPrefix(root + "/") else { continue }
+            // .app bundles are applications, not user documents: keep them
+            // removable wherever they live (Steam shortcuts on the Desktop,
+            // apps launched from ~/Downloads, etc.)
+            if path.hasSuffix(".app") { continue }
+            return true
+        }
+        return false
     }
 }
