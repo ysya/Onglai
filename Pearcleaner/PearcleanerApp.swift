@@ -19,7 +19,9 @@ struct PearcleanerApp: App {
     //MARK: StateObjects
     @StateObject var locations = Locations()
     @StateObject var fsm = FolderSettingsManager.shared
-    @StateObject private var updater = Updater(owner: "alienator88", repo: "Pearcleaner")
+    // Personal fork: point self-updates at the fork so an upstream release
+    // can never replace this build (no releases published -> check is a no-op)
+    @StateObject private var updater = Updater(owner: "ysya", repo: "Pearcleaner")
 
     init() {
         //MARK: GUI or CLI launch mode.
