@@ -16,6 +16,10 @@ class FileManagerUndo {
     // Private initializer to enforce singleton pattern
     private init() {}
 
+    private func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     // NSUndoManager instance to handle undo/redo actions
     let undoManager = UndoManager()
 
@@ -80,7 +84,12 @@ class FileManagerUndo {
         var tempFilePairs: [(trashURL: URL, originalURL: URL)] = []
         var seenFileNames: [String: Int] = [:]
 
-        let hasProtectedFiles = validURLs.contains { $0.isProtected }
+        // Moving an item requires write access to its parent directory, not to
+        // the item itself. Use that as the privilege boundary so ordinary
+        // files go straight to Trash without an unnecessary password prompt.
+        let requiresPrivileges = validURLs.contains {
+            !$0.deletingLastPathComponent().isWritable
+        }
 
         // Create bundle folder name with app name and timestamp
         let dateFormatter = DateFormatter()
@@ -106,7 +115,7 @@ class FileManagerUndo {
         let bundleFolderURL = URL(fileURLWithPath: bundleFolderPath)
 
         // Create the bundle folder first
-        let createFolderCommand = "/bin/mkdir -p \"\(bundleFolderPath)\""
+        let createFolderCommand = "/bin/mkdir -p \(shellQuoted(bundleFolderPath))"
 
         let mvCommands = validURLs.map { file -> String in
             let baseName = file.lastPathComponent
@@ -126,8 +135,8 @@ class FileManagerUndo {
             let destinationURL = bundleFolderURL.appendingPathComponent(finalName)
             tempFilePairs.append((trashURL: destinationURL, originalURL: file))
 
-            let source = "\"\(file.path)\""
-            let destination = "\"\(destinationURL.path)\""
+            let source = shellQuoted(file.path)
+            let destination = shellQuoted(destinationURL.path)
             return "/bin/mv \(source) \(destination)"
         }.joined(separator: " ; ")
 
@@ -135,7 +144,7 @@ class FileManagerUndo {
         let finalCommands = "\(createFolderCommand) ; \(mvCommands)"
         let filePairs = tempFilePairs
 
-        if executeFileCommands(finalCommands, isCLI: isCLI, hasProtectedFiles: hasProtectedFiles) {
+        if executeFileCommands(finalCommands, requiresPrivileges: requiresPrivileges) {
             undoManager.registerUndo(withTarget: self) { target in
                 let result = target.restoreFiles(filePairs: filePairs)
                 if !result {
@@ -177,13 +186,13 @@ class FileManagerUndo {
         let dispatchSemaphore = DispatchSemaphore(value: 0)
         var finalStatus = true
 
-        let hasProtectedFiles = filePairs.contains {
-            $0.originalURL.deletingLastPathComponent().isProtected
+        let requiresPrivileges = filePairs.contains {
+            !$0.originalURL.deletingLastPathComponent().isWritable
         }
 
         let commands = filePairs.map {
-            let source = "\"\($0.trashURL.path)\""
-            let destination = "\"\($0.originalURL.path)\""
+            let source = shellQuoted($0.trashURL.path)
+            let destination = shellQuoted($0.originalURL.path)
             return "/bin/mv \(source) \(destination)"
         }.joined(separator: " ; ")
 
@@ -199,12 +208,12 @@ class FileManagerUndo {
 
         // Add bundle folder cleanup command if we have one to remove
         let finalCommands = if let bundleFolder = bundleFolderToRemove {
-            "\(commands) ; /bin/rmdir \"\(bundleFolder)\""
+            "\(commands) ; /bin/rmdir \(shellQuoted(bundleFolder))"
         } else {
             commands
         }
 
-        if executeFileCommands(finalCommands, isCLI: isCLI, hasProtectedFiles: hasProtectedFiles, isRestore: true) {
+        if executeFileCommands(finalCommands, requiresPrivileges: requiresPrivileges, isRestore: true) {
             // Remove from persistent history after successful restore
             if let bundleFolder = bundleFolderToRemove {
                 Task { @MainActor in
@@ -227,36 +236,47 @@ class FileManagerUndo {
     }
 
     // Helper function to perform shell commands based on available privileges
-    private func executeFileCommands(_ commands: String, isCLI: Bool, hasProtectedFiles: Bool, isRestore: Bool = false) -> Bool {
+    private func executeFileCommands(_ commands: String, requiresPrivileges: Bool, isRestore: Bool = false) -> Bool {
         let semaphore = DispatchSemaphore(value: 0)
         var status = false
 
-        // Try privileged wrapper (helper tool or Authorization Services)
-        Task {
-            let result = try! await runSUCommand(
-                commands,
-                errorContext: isRestore ? "Undo restore operation failed" : "Undo delete operation failed",
-                throwOnFailure: false
-            )
-            status = result.0
+        // Most deletions operate entirely inside user-writable directories.
+        // Run those directly so they never trigger an administrator prompt.
+        if !requiresPrivileges {
+            let directResult = runDirectShellCommand(command: commands)
+            if directResult.0 {
+                return true
+            }
+            printOS(isRestore ? "Restore Error: \(directResult.1)" : "Trash Error: \(directResult.1)")
+            updateOnMain {
+                AppState.shared.trashError = true
+            }
+            return false
+        }
 
-            if !status {
-                printOS(isRestore ? "Restore Error: \(result.1)" : "Trash Error: \(result.1)")
+        // Protected paths get exactly one authorization attempt. If the user
+        // cancels, return failure; never fall back and execute the deletion.
+        Task {
+            do {
+                let result = try await runSUCommand(
+                    commands,
+                    errorContext: isRestore ? "Undo restore operation failed" : "Undo delete operation failed",
+                    throwOnFailure: false
+                )
+                status = result.0
+
+                if !status {
+                    printOS(isRestore ? "Restore Error: \(result.1)" : "Trash Error: \(result.1)")
+                    updateOnMain {
+                        AppState.shared.trashError = true
+                    }
+                }
+            } catch {
+                printOS(isRestore ? "Restore Error: \(error.localizedDescription)" : "Trash Error: \(error.localizedDescription)")
                 updateOnMain {
                     AppState.shared.trashError = true
                 }
-
-                // Fallback to direct shell if appropriate
-                if isCLI || !hasProtectedFiles {
-                    let shellResult = runDirectShellCommand(command: commands)
-                    status = shellResult.0
-                    if !status {
-                        printOS(isRestore ? "Restore Error: \(shellResult.1)" : "Trash Error: \(shellResult.1)")
-                        updateOnMain {
-                            AppState.shared.trashError = true
-                        }
-                    }
-                }
+                status = false
             }
 
             semaphore.signal()
@@ -292,7 +312,11 @@ class FileManagerUndo {
 }
 
 extension URL {
+    var isWritable: Bool {
+        FileManager.default.isWritableFile(atPath: self.path)
+    }
+
     var isProtected: Bool {
-        !FileManager.default.isWritableFile(atPath: self.path)
+        !isWritable
     }
 }

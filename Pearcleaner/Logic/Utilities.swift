@@ -220,7 +220,11 @@ func checkAppBundleArchitecture(at appBundlePath: String) -> Arch {
                 else if archData.cpuType == 0x01000007 { archs.append(.intel) }
                 offset += 20
             }
-            return archs.count == 1 ? archs.first! : .universal
+            // arm64 and arm64e are separate fat slices but belong to the same
+            // CPU family. Do not keep presenting an already-thinned
+            // arm64+arm64e binary as universal.
+            let uniqueArchitectures = Set(archs)
+            return uniqueArchitectures.count == 1 ? uniqueArchitectures.first! : .universal
         } else {
             // Single architecture Mach-O binary: read cpu type from header
             guard headerData.count >= 8 else { return .empty }

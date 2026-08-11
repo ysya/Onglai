@@ -176,8 +176,17 @@ struct AboutSettingsTab: View {
 
     private func exportUserDefaults() {
         let defaults = UserDefaults.standard.dictionaryRepresentation()
-        let settingsOnly = defaults.filter { $0.key.hasPrefix("settings.") }
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: settingsOnly, options: [.prettyPrinted]) else { return }
+        let jsonData: Data
+        do {
+            jsonData = try UserDefaultsTransfer.exportData(from: defaults)
+        } catch {
+            showCustomAlert(
+                title: String(localized: "Export Failed"),
+                message: error.localizedDescription,
+                style: .warning
+            )
+            return
+        }
 
         let savePanel = NSSavePanel()
         savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -185,7 +194,15 @@ struct AboutSettingsTab: View {
         savePanel.nameFieldStringValue = "OnglaiSettings.json"
         savePanel.begin { response in
             guard response == .OK, let url = savePanel.url else { return }
-            try? jsonData.write(to: url)
+            do {
+                try jsonData.write(to: url, options: .atomic)
+            } catch {
+                showCustomAlert(
+                    title: String(localized: "Export Failed"),
+                    message: error.localizedDescription,
+                    style: .warning
+                )
+            }
         }
     }
 
@@ -194,12 +211,23 @@ struct AboutSettingsTab: View {
         openPanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         openPanel.allowedContentTypes = [.json]
         openPanel.begin { response in
-            guard response == .OK, let url = openPanel.url,
-                  let data = try? Data(contentsOf: url),
-                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-
-            for (key, value) in dict {
-                UserDefaults.standard.setValue(value, forKey: key)
+            guard response == .OK, let url = openPanel.url else { return }
+            do {
+                let data = try Data(contentsOf: url)
+                let settings = try UserDefaultsTransfer.importSettings(from: data)
+                for (key, value) in settings {
+                    if let url = value as? URL {
+                        UserDefaults.standard.set(url, forKey: key)
+                    } else {
+                        UserDefaults.standard.set(value, forKey: key)
+                    }
+                }
+            } catch {
+                showCustomAlert(
+                    title: String(localized: "Import Failed"),
+                    message: error.localizedDescription,
+                    style: .warning
+                )
             }
         }
     }

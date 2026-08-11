@@ -35,6 +35,127 @@ public struct FatArch {
     }
 }
 
+private let cpuTypeARM64: UInt32 = 0x0100000c
+private let cpuTypeX86_64: UInt32 = 0x01000007
+private let fatMagic: UInt32 = 0xcafebabe
+
+private func appendBigEndian(_ value: UInt32, to data: inout Data) {
+    var bigEndianValue = value.bigEndian
+    withUnsafeBytes(of: &bigEndianValue) { data.append(contentsOf: $0) }
+}
+
+private func parseFatArchitectures(from data: Data) -> [FatArch]? {
+    guard data.count >= 8 else { return nil }
+
+    let header = data.prefix(8).withUnsafeBytes { ptr in
+        FatHeader(
+            magic: ptr.load(fromByteOffset: 0, as: UInt32.self).bigEndian,
+            numArchitectures: ptr.load(fromByteOffset: 4, as: UInt32.self).bigEndian
+        )
+    }
+
+    guard header.magic == fatMagic,
+          header.numArchitectures > 0,
+          header.numArchitectures < 100 else {
+        return nil
+    }
+
+    let headersSize = Int(header.numArchitectures) * 20
+    guard data.count >= 8 + headersSize else { return nil }
+
+    var architectures: [FatArch] = []
+    for index in 0..<Int(header.numArchitectures) {
+        let headerOffset = 8 + (index * 20)
+        let arch = data[headerOffset..<(headerOffset + 20)].withUnsafeBytes { ptr in
+            FatArch(
+                cpuType: ptr.load(fromByteOffset: 0, as: UInt32.self).bigEndian,
+                cpuSubtype: ptr.load(fromByteOffset: 4, as: UInt32.self).bigEndian,
+                offset: ptr.load(fromByteOffset: 8, as: UInt32.self).bigEndian,
+                size: ptr.load(fromByteOffset: 12, as: UInt32.self).bigEndian,
+                align: ptr.load(fromByteOffset: 16, as: UInt32.self).bigEndian
+            )
+        }
+
+        let sliceStart = Int(arch.offset)
+        let sliceEnd = sliceStart + Int(arch.size)
+        guard sliceStart >= 0, sliceEnd >= sliceStart, sliceEnd <= data.count else {
+            return nil
+        }
+        architectures.append(arch)
+    }
+    return architectures
+}
+
+/// Removes foreign CPU families from a fat Mach-O while preserving every slice
+/// for the current family. In particular, arm64 and arm64e have the same CPU
+/// type and different subtypes, so both must survive thinning.
+///
+/// Returns nil when the input is malformed, has no requested architecture, or
+/// already contains only the requested CPU family.
+func thinFatBinaryData(_ data: Data, keepingCPUType targetCPUType: UInt32) -> Data? {
+    guard let architectures = parseFatArchitectures(from: data) else { return nil }
+
+    let keptArchitectures = architectures.filter { $0.cpuType == targetCPUType }
+    guard !keptArchitectures.isEmpty, keptArchitectures.count < architectures.count else {
+        return nil
+    }
+
+    // A single surviving slice can become a normal thin Mach-O.
+    if keptArchitectures.count == 1, let arch = keptArchitectures.first {
+        let start = Int(arch.offset)
+        let end = start + Int(arch.size)
+        return data.subdata(in: start..<end)
+    }
+
+    // Multiple subtypes from the same family (for example arm64 + arm64e)
+    // must remain a fat binary. Rebuild the table and compact away foreign
+    // slices while retaining each subtype, alignment and payload unchanged.
+    var rebuilt = Data()
+    appendBigEndian(fatMagic, to: &rebuilt)
+    appendBigEndian(UInt32(keptArchitectures.count), to: &rebuilt)
+
+    let headerSize = 8 + keptArchitectures.count * 20
+    rebuilt.append(Data(repeating: 0, count: keptArchitectures.count * 20))
+
+    var rebuiltArchitectures: [FatArch] = []
+    for arch in keptArchitectures {
+        // Mach-O slices normally use page-size alignment. Reject implausibly
+        // large exponents instead of allocating a hostile amount of padding.
+        guard arch.align <= 24 else { return nil }
+        let alignment = 1 << Int(arch.align)
+        let padding = (alignment - (rebuilt.count % alignment)) % alignment
+        rebuilt.append(Data(repeating: 0, count: padding))
+
+        guard rebuilt.count <= Int(UInt32.max) else { return nil }
+        let newOffset = UInt32(rebuilt.count)
+        let start = Int(arch.offset)
+        let end = start + Int(arch.size)
+        rebuilt.append(data.subdata(in: start..<end))
+
+        rebuiltArchitectures.append(
+            FatArch(
+                cpuType: arch.cpuType,
+                cpuSubtype: arch.cpuSubtype,
+                offset: newOffset,
+                size: arch.size,
+                align: arch.align
+            )
+        )
+    }
+
+    guard rebuilt.count >= headerSize else { return nil }
+    var headerTable = Data()
+    for arch in rebuiltArchitectures {
+        appendBigEndian(arch.cpuType, to: &headerTable)
+        appendBigEndian(arch.cpuSubtype, to: &headerTable)
+        appendBigEndian(arch.offset, to: &headerTable)
+        appendBigEndian(arch.size, to: &headerTable)
+        appendBigEndian(arch.align, to: &headerTable)
+    }
+    rebuilt.replaceSubrange(8..<headerSize, with: headerTable)
+    return rebuilt
+}
+
 // Function to thin an entire app bundle with size tracking
 public func thinAppBundle(at bundlePath: URL, dryRun: Bool = false) -> (Bool, [String: UInt64]?) {
     // Get the total bundle size before thinning
@@ -239,12 +360,13 @@ public func isExecutableBinary(_ url: URL) -> Bool {
 
 // Helper function to thin a binary using Mach-O APIs
 public func thinBinaryUsingMachO(executablePath: String) -> Bool {
-    // Determine the target architecture based on the current OS
-    var targetArch: String
+    // Keep the entire native CPU family. arm64 and arm64e share CPU_TYPE_ARM64,
+    // so filtering by CPU type retains both slices.
+    let targetCPUType: UInt32
 #if arch(arm64)
-    targetArch = "arm64"
+    targetCPUType = cpuTypeARM64
 #else
-    targetArch = "x86_64"
+    targetCPUType = cpuTypeX86_64
 #endif
 
     // Find the app bundle path by searching up the directory tree
@@ -261,65 +383,13 @@ public func thinBinaryUsingMachO(executablePath: String) -> Bool {
                 try? fileHandle.close()
             }
 
-            // Read just the header to check if it's a fat binary
-            guard let headerData = try? fileHandle.read(upToCount: 8), headerData.count == 8 else {
-                return false
-            }
-
-            let FAT_MAGIC: UInt32 = 0xcafebabe
-            let fatHeader = headerData.withUnsafeBytes { ptr in
-                FatHeader(
-                    magic: ptr.load(fromByteOffset: 0, as: UInt32.self).bigEndian,
-                    numArchitectures: ptr.load(fromByteOffset: 4, as: UInt32.self).bigEndian
-                )
-            }
-
-            guard fatHeader.magic == FAT_MAGIC else {
-    //            printOS("Mach-O Error: Not a universal binary, skipping thinning.")
-                return false
-            }
-
-            var offset = 8
-            var foundArch: FatArch?
-
-            for _ in 0..<fatHeader.numArchitectures {
-                guard let archData = try? fileHandle.read(upToCount: 20), archData.count == 20 else {
-                    return false
-                }
-
-                let arch = archData.withUnsafeBytes { ptr in
-                    FatArch(
-                        cpuType: ptr.load(fromByteOffset: 0, as: UInt32.self).bigEndian,
-                        cpuSubtype: ptr.load(fromByteOffset: 4, as: UInt32.self).bigEndian,
-                        offset: ptr.load(fromByteOffset: 8, as: UInt32.self).bigEndian,
-                        size: ptr.load(fromByteOffset: 12, as: UInt32.self).bigEndian,
-                        align: ptr.load(fromByteOffset: 16, as: UInt32.self).bigEndian
-                    )
-                }
-
-                let cpuType = arch.cpuType
-                if (targetArch == "arm64" && cpuType == 0x100000C) || (targetArch == "x86_64" && cpuType == 0x01000007) {
-                    foundArch = arch
-                    break
-                }
-
-                offset += 20
-            }
-
-            guard let targetArchData = foundArch else {
-    //            printOS("Mach-O Error: Target architecture \(targetArch) not found in binary.")
-                return false
-            }
-
-            // Now read the entire file to extract the target slice
-            // We need to do this to get the complete architecture slice
             try? fileHandle.seek(toOffset: 0)
-            guard let fileData = try? fileHandle.readToEnd() else {
+            guard let fileData = try? fileHandle.readToEnd(),
+                  let thinnedData = thinFatBinaryData(fileData, keepingCPUType: targetCPUType) else {
                 return false
             }
 
-            let extractedData = fileData.subdata(in: Int(targetArchData.offset)..<Int(targetArchData.offset + targetArchData.size))
-            try extractedData.write(to: URL(fileURLWithPath: executablePath))
+            try thinnedData.write(to: executableURL)
 
             // Update file timestamp to refresh Finder bundle size right away
             if !appBundlePath.path.isEmpty && appBundlePath.path != "/" {
@@ -402,10 +472,14 @@ public func getArchitectureSliceSizes(from executablePath: String) throws -> (ar
                     )
                 }
 
-                if arch.cpuType == 0x100000C {
-                    armSize = arch.size
-                } else if arch.cpuType == 0x01000007 {
-                    intelSize = arch.size
+                if arch.cpuType == cpuTypeARM64 {
+                    armSize = armSize.addingReportingOverflow(arch.size).overflow
+                        ? UInt32.max
+                        : armSize + arch.size
+                } else if arch.cpuType == cpuTypeX86_64 {
+                    intelSize = intelSize.addingReportingOverflow(arch.size).overflow
+                        ? UInt32.max
+                        : intelSize + arch.size
                 }
                 offset += 20
             }
@@ -420,9 +494,9 @@ public func getArchitectureSliceSizes(from executablePath: String) throws -> (ar
             let cpuType = cpuTypeData.withUnsafeBytes {
                 $0.load(as: UInt32.self).bigEndian
             }
-            if cpuType == 0x100000C {
+            if cpuType == cpuTypeARM64 {
                 armSize = fullSize
-            } else if cpuType == 0x01000007 {
+            } else if cpuType == cpuTypeX86_64 {
                 intelSize = fullSize
             }
         }
