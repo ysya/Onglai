@@ -583,6 +583,18 @@ func reloadAppsList(
 // Process CLI // ========================================================================================================
 
 func handleLaunchMode() {
+    // When the executable runs outside the app bundle (e.g. via the
+    // /usr/local/bin/pear symlink), Bundle.main has no Info.plist, so
+    // UserDefaults.standard resolves to a domain named after the process
+    // ("pear.plist") and none of the settings configured in the GUI are
+    // visible to the CLI. Add the app domain to the search list, and drop
+    // the residue that earlier mis-domained runs wrote, since it would
+    // shadow the real settings.
+    if Bundle.main.bundleIdentifier == nil {
+        UserDefaults.standard.removePersistentDomain(forName: ProcessInfo.processInfo.processName)
+        UserDefaults.standard.addSuite(named: "com.alienator88.Pearcleaner")
+    }
+
     var arguments = CommandLine.arguments
     // Filter out arguments that break CLI commands on startup
     arguments = arguments.filter {
