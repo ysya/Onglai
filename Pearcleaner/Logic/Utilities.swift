@@ -13,10 +13,10 @@ import AudioToolbox
 import OpenDirectory
 
 enum AppLinks {
-    static let repository = URL(string: "https://github.com/ysya/Pearcleaner")!
-    static let releases = URL(string: "https://github.com/ysya/Pearcleaner/releases")!
-    static let issues = URL(string: "https://github.com/ysya/Pearcleaner/issues")!
-    static let newIssue = URL(string: "https://github.com/ysya/Pearcleaner/issues/new/choose")!
+    static let repository = URL(string: "https://github.com/ysya/Onglai")!
+    static let releases = URL(string: "https://github.com/ysya/Onglai/releases")!
+    static let issues = URL(string: "https://github.com/ysya/Onglai/issues")!
+    static let newIssue = URL(string: "https://github.com/ysya/Onglai/issues/new/choose")!
     static let sponsorship = URL(string: "https://ko-fi.com/ysyadev")!
     static let upstreamRepository = URL(string: "https://github.com/alienator88/Pearcleaner")!
     static let upstreamTranslationCredits = URL(string: "https://github.com/alienator88/Pearcleaner/discussions/137")!
