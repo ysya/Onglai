@@ -606,8 +606,13 @@ func handleLaunchMode() {
         arguments.remove(at: langIndex)
     }
 
-    let termType = ProcessInfo.processInfo.environment["TERM"]
-    let isRunningInTerminal = termType != nil && termType != "dumb"
+    // Detect a real terminal session via TTY-attached stdio. The TERM
+    // environment variable is unreliable for this: launchers like `open`,
+    // Raycast or Alfred forward the calling shell's environment, so a GUI
+    // launch carried TERM, got misrouted into CLI mode and exited right
+    // after printing help (upstream issue #589). LaunchServices attaches
+    // stdio to /dev/null, so isatty stays false for real GUI launches.
+    let isRunningInTerminal = isatty(STDIN_FILENO) == 1 || isatty(STDOUT_FILENO) == 1
 
     // Check if any CLI command arguments are present (even if not in terminal)
     // This handles cases like SUDO_ASKPASS where the app is launched without a terminal
