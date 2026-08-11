@@ -38,9 +38,11 @@ git commit -qam "chore: release ${VERSION} (build ${BUILD})"
 git tag "${VERSION}"
 git push -q origin main "refs/tags/${VERSION}"
 
+# -R pins the target repo: with an "upstream" remote configured, gh would
+# otherwise resolve the base repo to alienator88/Pearcleaner
 if [ -n "$NOTES" ]; then
-  gh release create "${VERSION}" "$ZIP" --title "Onglai ${VERSION}" --notes-file "$NOTES"
+  gh release create "${VERSION}" "$ZIP" -R ysya/Onglai --title "Onglai ${VERSION}" --notes-file "$NOTES"
 else
-  gh release create "${VERSION}" "$ZIP" --title "Onglai ${VERSION}" --generate-notes
+  gh release create "${VERSION}" "$ZIP" -R ysya/Onglai --title "Onglai ${VERSION}" --generate-notes
 fi
 echo "Released: https://github.com/ysya/Onglai/releases/tag/${VERSION}"
