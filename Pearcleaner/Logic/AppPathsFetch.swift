@@ -163,7 +163,7 @@ class AppPathFinder {
                 for directory in containerDirectories {
                     let directoryName = directory.lastPathComponent
                     if AppPathFinder.uuidRegex.firstMatch(in: directoryName, options: [], range: NSRange(location: 0, length: directoryName.utf16.count)) != nil {
-                        let metadataPlistURL = directory.appendingPathComponent(".com.apple.containermanagerd.metadata.plist")
+                        let metadataPlistURL = directory.appending(path: ".com.apple.containermanagerd.metadata.plist", directoryHint: .notDirectory)
                         if let metadataDict = NSDictionary(contentsOf: metadataPlistURL),
                            let applicationBundleID = metadataDict["MCMMetadataIdentifier"] as? String {
                             if applicationBundleID == self.appInfo.bundleIdentifier {
@@ -192,18 +192,24 @@ class AppPathFinder {
             var localResults: [URL] = []
             var subdirectoriesToSearch: [URL] = []
 
+            // directoryHint: .notDirectory skips the implicit lstat that SwiftURL's default .inferFromPath
+            // performs on every appendingPathComponent call on macOS 26+. With thousands of entries to scan,
+            // those probe stats dominate runtime. The hint means hasDirectoryPath is always false, so the
+            // fileExists check below is the only reliable directory test for this URL.
+            let locationURL = URL(fileURLWithPath: location)
             for scannedItem in contents {
-                let scannedItemURL = URL(fileURLWithPath: location).appendingPathComponent(scannedItem)
+                let scannedItemURL = locationURL.appending(path: scannedItem, directoryHint: .notDirectory)
+                var isDirectory: ObjCBool = false
+                let itemExists = FileManager.default.fileExists(atPath: scannedItemURL.path, isDirectory: &isDirectory)
                 let normalizedItemName: String
-                if scannedItemURL.hasDirectoryPath || scannedItemURL.pathExtension.isEmpty {
+                if isDirectory.boolValue || scannedItemURL.pathExtension.isEmpty {
                     // It's a directory or has no extension - don't remove anything
                     normalizedItemName = scannedItem.pearFormat()
                 } else {
                     // It's a file with an extension - remove the extension
                     normalizedItemName = (scannedItem as NSString).deletingPathExtension.pearFormat()
                 }
-                var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: scannedItemURL.path, isDirectory: &isDirectory) {
+                if itemExists {
                     if shouldSkipItem(normalizedItemName, at: scannedItemURL) { continue }
 
                     if specificCondition(normalizedItemName: normalizedItemName, scannedItemURL: scannedItemURL) {
