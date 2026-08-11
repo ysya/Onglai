@@ -103,8 +103,8 @@ class HomebrewAutoUpdateManager: ObservableObject {
     var originalRunUpgrade: Bool = false
     var originalRunCleanup: Bool = false
 
-    private let plistPath = "\(NSHomeDirectory())/Library/LaunchAgents/com.alienator88.Pearcleaner.homebrew-autoupdate.plist"
-    private let label = "com.alienator88.Pearcleaner.homebrew-autoupdate"
+    private let plistPath = "\(NSHomeDirectory())/Library/LaunchAgents/me.ysya.Onglai.homebrew-autoupdate.plist"
+    private let label = "me.ysya.Onglai.homebrew-autoupdate"
     let logPath = "/tmp/homebrew-autoupdate.log"
 
     private init() {

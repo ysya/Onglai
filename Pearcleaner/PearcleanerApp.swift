@@ -116,7 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // Open deep link for each app - DeeplinkManager will queue and process them sequentially
         for appURL in appURLs {
-            if let deepLinkURL = URL(string: "pear://com.alienator88.Pearcleaner?path=\(appURL.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? appURL.path)") {
+            if let deepLinkURL = URL(string: "onglai://me.ysya.Onglai?path=\(appURL.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? appURL.path)") {
                 NSWorkspace.shared.open(deepLinkURL)
             }
         }

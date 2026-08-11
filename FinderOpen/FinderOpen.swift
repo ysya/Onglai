@@ -56,7 +56,7 @@ class FinderOpen: FIFinderSync {
         // Consider only the first selected item
         let firstSelectedItem = selectedItems[0]
         let path = firstSelectedItem.path
-        NSWorkspace.shared.open(URL(string: "pear://com.alienator88.Pearcleaner?path=\(path)")!)
+        NSWorkspace.shared.open(URL(string: "onglai://me.ysya.Onglai?path=\(path)")!)
 
     }
 

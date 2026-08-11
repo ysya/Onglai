@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 // Main command structure
 struct PearCLI: ParsableCommand {
     static var configuration = CommandConfiguration(
-        commandName: "pear",
+        commandName: "ong",
         abstract: "Command-line interface for the Pearcleaner app",
         subcommands: [
 //            Run.self,
@@ -388,7 +388,7 @@ struct PearCLI: ParsableCommand {
             // Check if Pearcleaner main app is running
             let runningApps = NSWorkspace.shared.runningApplications
             let pearcleanerRunning = runningApps.contains { app in
-                app.bundleIdentifier == "com.alienator88.Pearcleaner" &&
+                app.bundleIdentifier == "me.ysya.Onglai" &&
                 app.processIdentifier != ProcessInfo.processInfo.processIdentifier
             }
 
@@ -409,7 +409,7 @@ struct PearCLI: ParsableCommand {
 
             let observerQueue = OperationQueue()
             let observer = center.addObserver(
-                forName: NSNotification.Name("com.alienator88.Pearcleaner.passwordResponse"),
+                forName: NSNotification.Name("me.ysya.Onglai.passwordResponse"),
                 object: nil,
                 queue: observerQueue
             ) { notification in
@@ -422,7 +422,7 @@ struct PearCLI: ParsableCommand {
             }
 
             center.postNotificationName(
-                NSNotification.Name("com.alienator88.Pearcleaner.passwordRequest"),
+                NSNotification.Name("me.ysya.Onglai.passwordRequest"),
                 object: nil,
                 userInfo: [
                     "requestId": requestId,
@@ -444,7 +444,7 @@ struct PearCLI: ParsableCommand {
         // MARK: - Show Password Dialog
         private static func showPasswordDialog(message: String) -> String? {
             let alert = NSAlert()
-            alert.messageText = "Pearcleaner"
+            alert.messageText = "Onglai"
             alert.informativeText = message
             alert.alertStyle = .informational
             alert.addButton(withTitle: "OK")

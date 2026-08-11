@@ -63,7 +63,7 @@ class DeeplinkManager {
             appState.externalMode = true
         }
 
-        guard let scheme = url.scheme, scheme == "pear" else {
+        guard let scheme = url.scheme, scheme == "onglai" else {
             guard !url.path.isEmpty else {
                 printOS("DLM: URL path is empty.")
                 return
@@ -106,7 +106,7 @@ class DeeplinkManager {
         // Process the next URL in the queue
         if nextURL.pathExtension == "app" {
             handleDroppedApps(url: nextURL, appState: appState, locations: locations)
-        } else if nextURL.scheme == "pear" {
+        } else if nextURL.scheme == "onglai" {
             handleDeepLinkedApps(url: nextURL, appState: appState, locations: locations)
         }
 
@@ -191,7 +191,7 @@ class DeeplinkManager {
                 printOS("DLM: No valid query items for 'path' or 'name' found in the URL.")
             }
         } else {
-            printOS("DLM: URL does not match the expected scheme pear://")
+            printOS("DLM: URL does not match the expected scheme onglai://")
         }
     }
 

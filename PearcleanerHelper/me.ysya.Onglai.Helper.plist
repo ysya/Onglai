@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.alienator88.Pearcleaner.PearcleanerHelper</string>
+	<string>me.ysya.Onglai.Helper</string>
 	<key>BundleProgram</key>
 	<string>Contents/MacOS/PearcleanerHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.alienator88.Pearcleaner.PearcleanerHelper</key>
+		<key>me.ysya.Onglai.Helper</key>
 		<true/>
 	</dict>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.alienator88.Pearcleaner</string>
+		<string>me.ysya.Onglai</string>
 	</array>
 </dict>
 </plist>

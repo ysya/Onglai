@@ -144,7 +144,7 @@ struct AboutSettingsTab: View {
         let savePanel = NSSavePanel()
         savePanel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         savePanel.allowedContentTypes = [.json]
-        savePanel.nameFieldStringValue = "PearcleanerSettings.json"
+        savePanel.nameFieldStringValue = "OnglaiSettings.json"
         savePanel.begin { response in
             guard response == .OK, let url = savePanel.url else { return }
             try? jsonData.write(to: url)

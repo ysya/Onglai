@@ -12,7 +12,7 @@ extension UserDefaults {
     // developer team, so provisioning rejects it for other teams. Team-prefixed
     // groups need no registration on macOS. Keep in sync with both
     // .entitlements files if the signing team ever changes.
-    static let appGroup = UserDefaults(suiteName: "VNGFZ627N6.group.pearcleaner")!
+    static let appGroup = UserDefaults(suiteName: "VNGFZ627N6.group.onglai")!
 
     struct Keys {
         static let showAppIconInMenu = "showAppIconInMenu"

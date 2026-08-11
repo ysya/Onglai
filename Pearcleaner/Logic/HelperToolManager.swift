@@ -29,7 +29,7 @@ enum HelperToolAction {
 class HelperToolManager: ObservableObject {
     static let shared = HelperToolManager()
     private var helperConnection: NSXPCConnection?
-    let helperToolIdentifier = "com.alienator88.Pearcleaner.PearcleanerHelper"
+    let helperToolIdentifier = "me.ysya.Onglai.Helper"
     @Published var isHelperToolInstalled: Bool = false
     @Published var message: String = String(localized: "Checking...")
     @Published var isInitialCheckComplete: Bool = false

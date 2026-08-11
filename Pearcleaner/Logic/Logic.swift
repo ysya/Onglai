@@ -584,7 +584,7 @@ func reloadAppsList(
 
 func handleLaunchMode() {
     // When the executable runs outside the app bundle (e.g. via the
-    // /usr/local/bin/pear symlink), Bundle.main has no Info.plist, so
+    // /usr/local/bin/ong symlink), Bundle.main has no Info.plist, so
     // UserDefaults.standard resolves to a domain named after the process
     // ("pear.plist") and none of the settings configured in the GUI are
     // visible to the CLI. Add the app domain to the search list, and drop
@@ -592,7 +592,7 @@ func handleLaunchMode() {
     // shadow the real settings.
     if Bundle.main.bundleIdentifier == nil {
         UserDefaults.standard.removePersistentDomain(forName: ProcessInfo.processInfo.processName)
-        UserDefaults.standard.addSuite(named: "com.alienator88.Pearcleaner")
+        UserDefaults.standard.addSuite(named: "me.ysya.Onglai")
     }
 
     var arguments = CommandLine.arguments
@@ -810,7 +810,7 @@ func manageFinderPlugin(install: Bool) {
     let task = Process()
     task.launchPath = "/usr/bin/pluginkit"
 
-    task.arguments = ["-e", "\(install ? "use" : "ignore")", "-i", "com.alienator88.Pearcleaner.FinderOpen"]
+    task.arguments = ["-e", "\(install ? "use" : "ignore")", "-i", "me.ysya.Onglai.FinderOpen"]
 
     task.launch()
     task.waitUntilExit()
@@ -1378,7 +1378,7 @@ func uninstallPearcleaner(appState: AppState, locations: Locations) {
 
 // --- Load Plist file with SMAppService ---
 func launchctl(load: Bool, completion: @escaping () -> Void = {}) {
-    let service = SMAppService.agent(plistName: "com.alienator88.PearcleanerSentinel.plist")
+    let service = SMAppService.agent(plistName: "me.ysya.Onglai.Sentinel.plist")
 
     if load {
         do {
@@ -1472,7 +1472,7 @@ func createTarArchive(appState: AppState) {
             let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
             throw NSError(
-                domain: "com.alienator88.Pearcleaner.archiveExport",
+                domain: "me.ysya.Onglai.archiveExport",
                 code: Int(process.terminationStatus),
                 userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }

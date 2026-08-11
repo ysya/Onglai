@@ -54,12 +54,12 @@ func fixLegacySymlink() {
     let fileManager = FileManager.default
     if fileManager.fileExists(atPath: legacyPath) {
         manageSymlink(install: false, symlinkName: "pearcleaner")
-        manageSymlink(install: true, symlinkName: "pear")
+        manageSymlink(install: true, symlinkName: "ong")
     }
 }
 
 // Install/uninstall symlink for CLI
-func manageSymlink(install: Bool, symlinkName: String = "pear") {
+func manageSymlink(install: Bool, symlinkName: String = "ong") {
     @AppStorage("settings.general.cli") var isCLISymlinked = false
 
     guard let appPath = Bundle.main.executablePath else {

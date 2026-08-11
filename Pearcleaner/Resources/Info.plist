@@ -25,10 +25,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.alienator88.Pearcleaner</string>
+			<string>me.ysya.Onglai</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>pear</string>
+				<string>onglai</string>
 			</array>
 		</dict>
 	</array>

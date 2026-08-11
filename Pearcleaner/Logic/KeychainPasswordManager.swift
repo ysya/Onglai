@@ -12,7 +12,7 @@ import Security
 class KeychainPasswordManager {
     static let shared = KeychainPasswordManager()
 
-    private let service = "com.alienator88.Pearcleaner.SudoPassword"
+    private let service = "me.ysya.Onglai.SudoPassword"
     private let account: String
 
     private init() {

@@ -10,7 +10,7 @@ import AppKit
 import OSLog
 
 private let logger = Logger(
-    subsystem: "com.alienator88.Pearcleaner",
+    subsystem: "me.ysya.Onglai",
     category: "Sentinel"
 )
 
@@ -78,13 +78,13 @@ func checkApp(file: String) {
         return
     }
 
-    guard appBundle.bundleIdentifier != "com.alienator88.Pearcleaner" else {
+    guard appBundle.bundleIdentifier != "me.ysya.Onglai" else {
         logger.debug("Ignoring Pearcleaner's own app bundle")
         return
     }
 
     var components = URLComponents()
-    components.scheme = "pear"
+    components.scheme = "onglai"
     components.host = "openApp"
     components.queryItems = [URLQueryItem(name: "path", value: file)]
 
