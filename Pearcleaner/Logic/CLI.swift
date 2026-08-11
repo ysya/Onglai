@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 struct PearCLI: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "ong",
-        abstract: "Command-line interface for the Pearcleaner app",
+        abstract: "Command-line interface for the Onglai app",
         subcommands: [
 //            Run.self,
             List.self,
