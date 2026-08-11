@@ -333,12 +333,17 @@ struct MainWindow: View {
             }
             .shadow(color: Color(NSColor.windowBackgroundColor).opacity(1), radius: 1, x: 0, y: 0)
             .shadow(color: color.opacity(1), radius: glowRadius, x: 0, y: 0)
-            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: glowRadius)
         }
         .buttonStyle(.plain)
         .help(help)
         .onAppear {
-            glowRadius = 5.0
+            // Explicit animation keeps the repeatForever pulse scoped to
+            // glowRadius; the implicit .animation(value:) form also captured
+            // the toolbar's settling layout, leaving the button oscillating
+            // half outside the title bar on macOS 26.
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                glowRadius = 5.0
+            }
         }
     }
 
