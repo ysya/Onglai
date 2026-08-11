@@ -996,6 +996,7 @@
 				OTHER_SWIFT_FLAGS = "-Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/CommerceKit/module.modulemap -Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/StoreFoundation/module.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai;
 				PRODUCT_NAME = Onglai;
+				PRODUCT_MODULE_NAME = Pearcleaner;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "M1 Pro Signed - Pearcleaner";
 				REGISTER_APP_GROUPS = YES;
@@ -1053,6 +1054,7 @@
 				OTHER_SWIFT_FLAGS = "-Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/CommerceKit/module.modulemap -Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/StoreFoundation/module.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai;
 				PRODUCT_NAME = Onglai;
+				PRODUCT_MODULE_NAME = Pearcleaner;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "M1 Pro Signed - Pearcleaner";
 				REGISTER_APP_GROUPS = YES;
