@@ -8,11 +8,21 @@
 import Foundation
 
 extension UserDefaults {
-    // Personal fork: the upstream group ID is registered to alienator88's
-    // developer team, so provisioning rejects it for other teams. Team-prefixed
-    // groups need no registration on macOS. Keep in sync with both
-    // .entitlements files if the signing team ever changes.
-    static let appGroup = UserDefaults(suiteName: "HU9YTD2FDW.group.onglai")!
+    private static let appGroupIdentifierKey = "OnglaiAppGroupIdentifier"
+
+    // The identifier is generated from the active signing team and embedded in
+    // both the app and Finder extension. This keeps local Development and
+    // Developer ID builds on the same suite without hard-coding either team.
+    static let appGroup: UserDefaults = {
+        guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupIdentifierKey) as? String,
+              !identifier.isEmpty,
+              !identifier.contains("$(") else {
+            assertionFailure("Missing expanded Onglai app-group identifier")
+            return .standard
+        }
+
+        return UserDefaults(suiteName: identifier) ?? .standard
+    }()
 
     struct Keys {
         static let showAppIconInMenu = "showAppIconInMenu"

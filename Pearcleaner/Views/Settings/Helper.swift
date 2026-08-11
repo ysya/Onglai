@@ -12,10 +12,11 @@ import AlinFoundation
 struct HelperSettingsTab: View {
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject private var helperToolManager = HelperToolManager.shared
+#if DEBUG
     @State private var commandOutput: String = "Command output will display here"
     @State private var commandToRun: String = "whoami"
     @State private var commandToRunManual: String = ""
-    @State private var showTestingUI: Bool = false
+#endif
 
     var body: some View {
         VStack(spacing: 20) {
@@ -40,9 +41,6 @@ struct HelperSettingsTab: View {
                                 .frame(width: 20, height: 20)
                                 .padding(.trailing)
                                 .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                .onTapGesture {
-                                    showTestingUI.toggle()
-                                }
                             Text("Perform privileged operations seamlessly without password prompts")
                                 .font(.callout)
                                 .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
@@ -101,6 +99,7 @@ struct HelperSettingsTab: View {
 
             })
 
+#if DEBUG
             PearGroupBox(header: {
                 Text("Helper Playground").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title2)
             }, content: {
@@ -172,22 +171,13 @@ struct HelperSettingsTab: View {
             })
             .disabled(!helperToolManager.isHelperToolInstalled)
             .opacity(helperToolManager.isHelperToolInstalled ? 1 : 0.5)
+#endif
 
 
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task {
                 await helperToolManager.manageHelperTool()
-            }
-            if helperToolManager.isHelperToolInstalled && showTestingUI {
-                Task {
-                    let (success, output) = await helperToolManager.runCommand(commandToRun)
-                    if success {
-                        commandOutput = output
-                    } else {
-                        printOS("Helper: \(output)")
-                    }
-                }
             }
         }
 

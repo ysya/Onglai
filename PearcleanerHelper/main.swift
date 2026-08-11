@@ -10,6 +10,8 @@ import ObjectiveC
 
 @objc(HelperToolProtocol)
 public protocol HelperToolProtocol {
+    func ping(withReply reply: @escaping (Bool, String) -> Void)
+    func moveItem(atPath sourcePath: String, toPath destinationPath: String, withReply reply: @escaping (Bool, String) -> Void)
     func runCommand(command: String, withReply reply: @escaping (Bool, String) -> Void)
     func runThinning(atPath: String, withReply reply: @escaping (Bool, String) -> Void)
     func runBundleThinning(bundlePath: String, withReply reply: @escaping (Bool, String, [String: UInt64]) -> Void)
@@ -18,8 +20,15 @@ public protocol HelperToolProtocol {
 // XPC Communication setup
 class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
     private var activeConnections = Set<NSXPCConnection>()
+    private let clientCodeSigningRequirement: String
     
     override init() {
+        do {
+            let teamIdentifier = try CodesignCheck.codeSigningTeamIdentifierForSelf()
+            clientCodeSigningRequirement = "anchor apple generic and identifier \"me.ysya.Onglai\" and certificate leaf[subject.OU] = \(teamIdentifier)"
+        } catch {
+            fatalError("Unable to establish the helper client identity: \(error)")
+        }
         super.init()
     }
     
@@ -31,13 +40,11 @@ class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
             print("❌ Rejected connection from unauthorized client")
             return false
         }
-        // Kernel-enforced per-message requirement: caller must be this team's
-        // signed main app. Closes the PID-reuse window that the point-in-time
-        // certificate chain comparison above cannot; subject.OU pins the team
-        // so the requirement survives certificate renewals.
-        newConnection.setCodeSigningRequirement(
-            "anchor apple generic and identifier \"me.ysya.Onglai\" and certificate leaf[subject.OU] = VNGFZ627N6"
-        )
+        // Kernel-enforced per-message requirement: caller must be the Onglai
+        // main app signed by the same team as this helper. Deriving the team
+        // from our own signature keeps Debug and Developer ID builds aligned
+        // without trusting a source-code constant or a caller-provided value.
+        newConnection.setCodeSigningRequirement(clientCodeSigningRequirement)
         newConnection.exportedInterface = NSXPCInterface(with: HelperToolProtocol.self)
         newConnection.exportedObject = self
         newConnection.invalidationHandler = { [weak self] in
@@ -49,6 +56,41 @@ class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
         activeConnections.insert(newConnection)
         newConnection.resume()
         return true
+    }
+
+    func ping(withReply reply: @escaping (Bool, String) -> Void) {
+        reply(true, "pong")
+    }
+
+    func moveItem(atPath sourcePath: String, toPath destinationPath: String, withReply reply: @escaping (Bool, String) -> Void) {
+        let fileManager = FileManager.default
+        let sourceURL = URL(fileURLWithPath: sourcePath).standardizedFileURL
+        let destinationURL = URL(fileURLWithPath: destinationPath).standardizedFileURL
+        let sourceParent = sourceURL.deletingLastPathComponent()
+        let destinationParent = destinationURL.deletingLastPathComponent()
+        let protectedPaths: Set<String> = [
+            "/", "/Applications", "/Library", "/System", "/Users",
+            "/bin", "/etc", "/private", "/sbin", "/usr", "/var"
+        ]
+
+        guard sourceURL.path.hasPrefix("/"),
+              destinationURL.path.hasPrefix("/"),
+              sourceParent == destinationParent,
+              sourceURL != destinationURL,
+              !protectedPaths.contains(sourceURL.path),
+              !protectedPaths.contains(destinationURL.path),
+              fileManager.fileExists(atPath: sourceURL.path),
+              !fileManager.fileExists(atPath: destinationURL.path) else {
+            reply(false, "The requested rename is not permitted")
+            return
+        }
+
+        do {
+            try fileManager.moveItem(at: sourceURL, to: destinationURL)
+            reply(true, "Success")
+        } catch {
+            reply(false, error.localizedDescription)
+        }
     }
     
     // Execute the shell command and reply with output.

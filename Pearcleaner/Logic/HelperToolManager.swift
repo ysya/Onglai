@@ -14,6 +14,8 @@ extension Notification.Name {
 
 @objc(HelperToolProtocol)
 public protocol HelperToolProtocol {
+    func ping(withReply reply: @escaping (Bool, String) -> Void)
+    func moveItem(atPath sourcePath: String, toPath destinationPath: String, withReply reply: @escaping (Bool, String) -> Void)
     func runCommand(command: String, withReply reply: @escaping (Bool, String) -> Void)
     func runThinning(atPath: String, withReply reply: @escaping (Bool, String) -> Void)
     func runBundleThinning(bundlePath: String, withReply reply: @escaping (Bool, String, [String: UInt64]) -> Void)
@@ -80,10 +82,10 @@ class HelperToolManager: ObservableObject {
                 SMAppService.openSystemSettingsLoginItems()
             case .enabled:
                 // Verify the helper actually works (same desync check as .none action)
-                let whoamiResult = await runCommand("whoami", skipHelperCheck: true)
-                let isRoot = whoamiResult.0 && whoamiResult.1.trimmingCharacters(in: .whitespacesAndNewlines) == "root"
+                let pingResult = await ping(skipHelperCheck: true)
+                let isAvailable = pingResult.0
 
-                if !isRoot {
+                if !isAvailable {
                     // Desync detected - helper claims enabled but doesn't work
                     printOS("Helper desync detected during install attempt, attempting auto-recovery...")
                     updateOnMain {
@@ -200,6 +202,52 @@ class HelperToolManager: ObservableObject {
         }
     }
 
+    func ping(skipHelperCheck: Bool = false) async -> (Bool, String) {
+        if !skipHelperCheck && !isHelperToolInstalled {
+            return (false, "XPC: Helper tool is not installed")
+        }
+
+        guard let connection = getConnection() else {
+            return (false, "XPC: Connection not available")
+        }
+
+        return await withCheckedContinuation { continuation in
+            guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+                continuation.resume(returning: (false, "XPC: Connection error: \(error.localizedDescription)"))
+            }) as? HelperToolProtocol else {
+                continuation.resume(returning: (false, "XPC: Failed to get remote object"))
+                return
+            }
+
+            proxy.ping { success, output in
+                continuation.resume(returning: (success, output))
+            }
+        }
+    }
+
+    func moveItem(at sourceURL: URL, to destinationURL: URL) async -> (Bool, String) {
+        guard isHelperToolInstalled else {
+            return (false, "XPC: Helper tool is not installed")
+        }
+
+        guard let connection = getConnection() else {
+            return (false, "XPC: Connection not available")
+        }
+
+        return await withCheckedContinuation { continuation in
+            guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+                continuation.resume(returning: (false, "XPC: Connection error: \(error.localizedDescription)"))
+            }) as? HelperToolProtocol else {
+                continuation.resume(returning: (false, "XPC: Failed to get remote object"))
+                return
+            }
+
+            proxy.moveItem(atPath: sourceURL.path, toPath: destinationURL.path) { success, output in
+                continuation.resume(returning: (success, output))
+            }
+        }
+    }
+
     // Function to run privileged thinning on apps owned by root
     func runThinning(atPath path: String) async -> (Bool, String) {
         guard let connection = getConnection() else {
@@ -290,10 +338,10 @@ class HelperToolManager: ObservableObject {
                     self.message = String(localized: "Service hasn't been registered. You may register it now.")
                 }
             case .enabled:
-                let whoamiResult = await runCommand("whoami", skipHelperCheck: true)
-                let isRoot = whoamiResult.0 && whoamiResult.1.trimmingCharacters(in: .whitespacesAndNewlines) == "root"
+                let pingResult = await ping(skipHelperCheck: true)
+                let isAvailable = pingResult.0
 
-                if !isRoot {
+                if !isAvailable {
                     // Desync detected - try reinstall first, then nuclear reset
                     updateOnMain {
                         self.message = String(localized: "Service desynced, attempting recovery...")

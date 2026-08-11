@@ -19,7 +19,16 @@ struct CodesignCheck {
     // MARK: - Compare Functions
 
     public static func codeSigningMatches(pid: pid_t) throws -> Bool {
-        return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forPID: pid)
+        let ownCertificates = try self.codeSigningCertificatesForSelf()
+        let clientCertificates = try self.codeSigningCertificates(forPID: pid)
+
+        // Ad-hoc signatures do not contain a certificate chain. Treating two
+        // empty arrays as equal would let any valid ad-hoc client through.
+        guard !ownCertificates.isEmpty, !clientCertificates.isEmpty else {
+            return false
+        }
+
+        return ownCertificates == clientCertificates
     }
 
     // MARK: - Public Functions
@@ -37,6 +46,17 @@ struct CodesignCheck {
     public static func codeSigningCertificates(forURL url: URL) throws -> [SecCertificate] {
         guard let secStaticCode = try secStaticCode(forURL: url) else { return [] }
         return try codeSigningCertificates(forStaticCode: secStaticCode)
+    }
+
+    public static func codeSigningTeamIdentifierForSelf() throws -> String {
+        guard let secStaticCode = try secStaticCodeSelf(),
+              let secCodeInfo = try secCodeInfo(forStaticCode: secStaticCode),
+              let teamIdentifier = secCodeInfo[kSecCodeInfoTeamIdentifier as String] as? String,
+              !teamIdentifier.isEmpty else {
+            throw CodesignCheckError.message("The helper signature has no Team Identifier")
+        }
+
+        return teamIdentifier
     }
 
     // MARK: - Private Functions

@@ -685,15 +685,19 @@ struct FileSearchView: View {
     private func performRename(result: FileSearchResult, newName: String) {
         let newURL = result.url.deletingLastPathComponent().appendingPathComponent(newName)
 
-        // Always use helper for file operations (works for all file types)
-        let command = "/bin/mv \"\(result.url.path)\" \"\(newURL.path)\""
-
         Task {
-            let moveResult = try! await runSUCommand(
-                command,
-                errorContext: "Failed to rename file",
-                throwOnFailure: false
-            )
+            let moveResult: (Bool, String)
+            do {
+                try FileManager.default.moveItem(at: result.url, to: newURL)
+                moveResult = (true, "Success")
+            } catch {
+                if HelperToolManager.shared.isHelperToolInstalled {
+                    moveResult = await HelperToolManager.shared.moveItem(at: result.url, to: newURL)
+                } else {
+                    let command = "/bin/mv -- \(shellQuote(result.url.path)) \(shellQuote(newURL.path))"
+                    moveResult = performPrivilegedCommands(commands: command)
+                }
+            }
 
             if moveResult.0 {
                 // Update the result in the list
@@ -719,6 +723,10 @@ struct FileSearchView: View {
                 )
             }
         }
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private func deleteFile(_ result: FileSearchResult) {
