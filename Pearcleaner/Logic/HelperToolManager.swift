@@ -33,12 +33,22 @@ class HelperToolManager: ObservableObject {
     @Published var isHelperToolInstalled: Bool = false
     @Published var message: String = String(localized: "Checking...")
     @Published var isInitialCheckComplete: Bool = false
+    // Running without the helper is a fully supported (and default) setup,
+    // so the toolbar badge only advertises the feature until the user has
+    // looked at it once; after that the Helper settings tab is the home
+    // for its status.
+    @Published var helperBadgeDismissed: Bool = UserDefaults.standard.bool(forKey: "settings.helper.badgeDismissed")
     var status: String {
         return isHelperToolInstalled ? String(localized:"Enabled") : String(localized:"Disabled")
     }
 
     var shouldShowHelperBadge: Bool {
-        return isInitialCheckComplete && !isHelperToolInstalled
+        return isInitialCheckComplete && !isHelperToolInstalled && !helperBadgeDismissed
+    }
+
+    func dismissHelperBadge() {
+        helperBadgeDismissed = true
+        UserDefaults.standard.set(true, forKey: "settings.helper.badgeDismissed")
     }
 
     // Trigger overlay when operation fails due to missing helper
