@@ -12,6 +12,16 @@ import AppKit
 import AudioToolbox
 import OpenDirectory
 
+enum AppLinks {
+    static let repository = URL(string: "https://github.com/ysya/Pearcleaner")!
+    static let releases = URL(string: "https://github.com/ysya/Pearcleaner/releases")!
+    static let issues = URL(string: "https://github.com/ysya/Pearcleaner/issues")!
+    static let newIssue = URL(string: "https://github.com/ysya/Pearcleaner/issues/new/choose")!
+    static let sponsorship = URL(string: "https://ko-fi.com/ysyadev")!
+    static let upstreamRepository = URL(string: "https://github.com/alienator88/Pearcleaner")!
+    static let upstreamTranslationCredits = URL(string: "https://github.com/alienator88/Pearcleaner/discussions/137")!
+}
+
 func ifOSBelow(macOS major: Int, _ minor: Int = 0, _ patch: Int = 0) -> Bool {
     if !ProcessInfo.processInfo.isOperatingSystemAtLeast(
         OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: patch)
@@ -780,7 +790,7 @@ func getSystemDebugString() -> String {
     let uptime = processInfo.systemUptime
     let uptimeFormatted = formatTimeInterval(uptime)
 
-    // Pearcleaner memory usage
+    // Onglai memory usage
     var taskInfo = mach_task_basic_info()
     var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
     let result = withUnsafeMutablePointer(to: &taskInfo) {
@@ -796,9 +806,9 @@ func getSystemDebugString() -> String {
     return """
 
     ====================================
-    System & Pearcleaner Debug Info
+    System & Onglai Debug Info
     ====================================
-    Pearcleaner Version: \(pcVersion) (Build \(pcBuild))
+    Onglai Version: \(pcVersion) (Build \(pcBuild))
     Bundle ID: \(pcBundleID)
     Running Architecture: \(archRunning)
     Memory Usage: \(memoryUsage)

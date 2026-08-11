@@ -148,7 +148,7 @@ struct BadgeOverlay: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Divider()
 
-                        Text("When the helper tool was introduced March 2025, it was said that AuthorizationExecuteWithPrivileges (granting authentication via password prompt popup) would eventually be removed as it has already been deprecated by Apple. Some functionality will stop working in Pearcleaner if the helper isn't enabled going forward.")
+                        Text("When the helper tool was introduced March 2025, it was said that AuthorizationExecuteWithPrivileges (granting authentication via password prompt popup) would eventually be removed as it has already been deprecated by Apple. Some functionality will stop working in Onglai if the helper isn't enabled going forward.")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -250,7 +250,7 @@ struct BadgeOverlay: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Divider()
 
-                        Text("Pearcleaner requires permissions to search all system locations comprehensively.")
+                        Text("Onglai requires permissions to search all system locations comprehensively.")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -366,7 +366,7 @@ struct BadgeOverlay: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Divider()
 
-                        Text("A new version of Pearcleaner is available for download.")
+                        Text("A new version of Onglai is available for download.")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -446,7 +446,7 @@ struct BadgeOverlay: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Divider()
 
-                        Text("Check out the latest additions to Pearcleaner.")
+                        Text("Check out the latest additions to Onglai.")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                             .fixedSize(horizontal: false, vertical: true)

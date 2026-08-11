@@ -53,7 +53,7 @@ class PasswordRequestHandler {
 
     private func showPasswordDialog(message: String) -> String? {
         let alert = NSAlert()
-        alert.messageText = "Pearcleaner"
+        alert.messageText = "Onglai"
         alert.informativeText = message
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")

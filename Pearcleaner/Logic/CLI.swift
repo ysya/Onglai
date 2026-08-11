@@ -204,7 +204,7 @@ struct PearCLI: ParsableCommand {
         static var configuration = CommandConfiguration(
             commandName: "remove-orphaned",
             abstract:
-                "Remove ALL orphaned files (To ignore files, add them to the exception list within Pearcleaner settings)"
+                "Remove ALL orphaned files (To ignore files, add them to the exception list within Onglai settings)"
         )
 
         func run() throws {

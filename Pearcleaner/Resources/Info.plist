@@ -38,7 +38,7 @@
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Uninstall with Pearcleaner</string>
+				<string>Uninstall with Onglai</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>handleServiceRequest</string>

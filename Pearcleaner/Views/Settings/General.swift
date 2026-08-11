@@ -55,7 +55,7 @@ struct GeneralSettingsTab: View {
                                     Text("Homebrew cleanup after uninstall")
                                         .font(.callout)
                                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText.opacity(1))
-                                    InfoButton(text: String(localized: "When Homebrew cleanup is enabled, Pearcleaner will check if the app you are removing was installed via Homebrew and remove the cache to keep everything synced up."))
+                                    InfoButton(text: String(localized: "When Homebrew cleanup is enabled, Onglai will check if the app you are removing was installed via Homebrew and remove the cache to keep everything synced up."))
                                 }
 
                             }
@@ -107,7 +107,7 @@ struct GeneralSettingsTab: View {
                                     .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                             }
 
-                            InfoButton(text: String(localized: "When this mode is enabled, clicking the Uninstall button to remove an app will also close Pearcleaner right after.\nThis only affects Pearcleaner when it is opened via external means, like Sentinel Trash Monitor, Finder extension or a Deep Link.\nThis allows for single use of the app for a quick uninstall. When Pearcleaner is opened normally, this setting is ignored and will work as usual."))
+                            InfoButton(text: String(localized: "When this mode is enabled, clicking the Uninstall button to remove an app will also close Onglai right after.\nThis only affects Onglai when it is opened via external means, like Sentinel Trash Monitor, Finder extension or a Deep Link.\nThis allows for single use of the app for a quick uninstall. When Onglai is opened normally, this setting is ignored and will work as usual."))
 
                             Spacer()
                             Toggle(isOn: $oneShotMode, label: {
@@ -131,7 +131,7 @@ struct GeneralSettingsTab: View {
                                     .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                             }
 
-                            InfoButton(text: String(localized: "When enabled, Pearcleaner will automatically scan for app updates in the background during launch. This way, updates are ready when you open the Updater view."))
+                            InfoButton(text: String(localized: "When enabled, Onglai will automatically scan for app updates in the background during launch. This way, updates are ready when you open the Updater view."))
 
                             Spacer()
                             Toggle(isOn: $loadUpdatesOnStartup, label: {
@@ -154,7 +154,7 @@ struct GeneralSettingsTab: View {
                                     Text("Password cache timeout")
                                         .font(.callout)
                                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                    InfoButton(text: String(localized: "When running privileged Homebrew operations, Pearcleaner caches your password in the macOS Keychain for this duration to avoid repeated password prompts. Homebrew commands cannot be executed with the privileged helper tool Pearcleaner offers."))
+                                    InfoButton(text: String(localized: "When running privileged Homebrew operations, Onglai caches your password in the macOS Keychain for this duration to avoid repeated password prompts. Homebrew commands cannot be executed with the privileged helper tool Onglai offers."))
                                 }
                             }
 
@@ -219,7 +219,7 @@ struct GeneralSettingsTab: View {
                     HStack(spacing: 0) {
                         Text("Search Sensitivity").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title2)
                         InfoButton(text: String(localized: """
-                    The search sensitivity level controls how strict or lenient Pearcleaner is when finding related files for an app:
+                    The search sensitivity level controls how strict or lenient Onglai is when finding related files for an app:
 
                     • Strict – \(SearchSensitivityLevel.strict.description)
                     
@@ -303,7 +303,7 @@ struct GeneralSettingsTab: View {
                         Text("Detect when apps are moved to Trash")
                             .font(.callout)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                        InfoButton(text: String(localized: "When applications are moved to Trash, Pearcleaner will launch and find related files and folders for deletion."))
+                        InfoButton(text: String(localized: "When applications are moved to Trash, Onglai will launch and find related files and folders for deletion."))
                         Spacer()
 
                         Toggle(isOn: $sentinel, label: {
@@ -341,7 +341,7 @@ struct GeneralSettingsTab: View {
                                         .font(.callout)
                                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
 
-                                    InfoButton(text: String(localized: "Enabling this extension will allow you to right click apps in Finder to quickly uninstall them with Pearcleaner"))
+                                    InfoButton(text: String(localized: "Enabling this extension will allow you to right click apps in Finder to quickly uninstall them with Onglai"))
                                     Spacer()
                                 }
 
@@ -424,10 +424,10 @@ struct GeneralSettingsTab: View {
                             VStack {
 
                                 HStack {
-                                    Text("Pearcleaner CLI support")
+                                    Text("Onglai CLI support")
                                         .font(.callout)
                                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                    InfoButton(text: String(localized: "Enabling the CLI will allow you to execute Pearcleaner actions from the Terminal. This will add pearcleaner command into /usr/local/bin so it's available directly from your PATH environment variable. Try it after enabling:\n\n> pear --help"))
+                                    InfoButton(text: String(localized: "Enabling the CLI will allow you to execute Onglai actions from the Terminal. This will add pearcleaner command into /usr/local/bin so it's available directly from your PATH environment variable. Try it after enabling:\n\n> pear --help"))
                                     Spacer()
                                 }
 

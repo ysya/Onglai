@@ -90,13 +90,13 @@ struct HelperSettingsTab: View {
                 Text("Information").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title2)
             }, content: {
                 let message: LocalizedStringKey = """
-                Pearcleaner will ask you to enter your password once to enable the helper, then all subsequent privileged operations will run without any other prompts as long as the helper stays enabled in Settings > Login Items. This authorization is all managed by macOS via SMAppService.
+                Onglai will ask you to enter your password once to enable the helper, then all subsequent privileged operations will run without any other prompts as long as the helper stays enabled in Settings > Login Items. This authorization is all managed by macOS via SMAppService.
                 """
 
                 VStack(alignment: .leading, spacing: 20) {
                     Text(message).foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.body).lineSpacing(5)
 
-                    Text("Since **AuthorizationExecuteWithPrivileges** has been deprecated by Apple as a less secure authentication method, it has been removed from Pearcleaner and the helper tool will be the only option going forward.").font(.footnote).foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    Text("Since **AuthorizationExecuteWithPrivileges** has been deprecated by Apple as a less secure authentication method, it has been removed from Onglai and the helper tool will be the only option going forward.").font(.footnote).foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                 }
 
             })

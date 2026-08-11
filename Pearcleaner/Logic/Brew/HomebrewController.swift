@@ -2034,14 +2034,14 @@ class HomebrewController: ObservableObject {
     }
 
     func calculateCaskSize(name: String) async -> (Int64, String) {
-        // Special case for Pearcleaner (running app, not in sortedApps)
+        // Special case for the running app, which is not in sortedApps
         if name == "pearcleaner" {
-            let pearcleanerPath = URL(fileURLWithPath: "/Applications/Pearcleaner.app")
-            guard FileManager.default.fileExists(atPath: pearcleanerPath.path) else {
+            let appPath = Bundle.main.bundleURL
+            guard FileManager.default.fileExists(atPath: appPath.path) else {
                 return (0, "0 KB")
             }
 
-            let totalBytes = totalSizeOnDisk(for: pearcleanerPath)
+            let totalBytes = totalSizeOnDisk(for: appPath)
             let bytesToFormat = totalBytes
             let formatted = await MainActor.run {
                 ByteCountFormatter.string(fromByteCount: bytesToFormat, countStyle: .file)

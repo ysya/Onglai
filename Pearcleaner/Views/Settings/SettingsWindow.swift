@@ -101,7 +101,7 @@ struct SettingsView: View {
 
                     case .about:
                         Button(action: {
-                            NSWorkspace.shared.open(URL(string: "https://ko-fi.com/ysyadev")!)
+                            NSWorkspace.shared.open(AppLinks.sponsorship)
                         }, label: {
                             Label {
                                 Text("Support Onglai")

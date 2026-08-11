@@ -19,16 +19,14 @@ struct Condition: Codable {
         self.include = include.map { $0.pearFormat() }
         self.exclude = exclude.map { $0.pearFormat() }
         self.includeForce = includeForce?.compactMap { path in
-            if let url = URL(string: path), FileManager.default.fileExists(atPath: url.path) {
-                return url
-            }
-            return nil
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
-        self.excludeForce = excludeForce?.compactMap { path in
-            if let url = URL(string: path), FileManager.default.fileExists(atPath: url.path) {
-                return url
-            }
-            return nil
+        // Exclusions are policy, not discovery results: keep them even when
+        // the path does not exist yet so a later-created shared folder is
+        // still protected for the lifetime of the process.
+        self.excludeForce = excludeForce?.map { path in
+            URL(fileURLWithPath: path).standardizedFileURL
         }
     }
 }
@@ -119,7 +117,10 @@ var conditions: [Condition] = [
         bundle_id: "org.mozilla.firefox.nightly",
         include: ["mozilla", "firefox"],
         exclude: ["thunderbird"],
-        includeForce: nil
+        includeForce: nil,
+        // Firefox channels share this profile root. Removing Nightly must not
+        // wipe profiles, bookmarks, or passwords used by stable Firefox.
+        excludeForce: ["\(home)/Library/Application Support/Firefox"]
     ),
     Condition(
         bundle_id: "com.logi.optionsplus",

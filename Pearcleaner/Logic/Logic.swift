@@ -1218,7 +1218,7 @@ func exportDebugInfo(appState: AppState) {
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
             let timestamp = dateFormatter.string(from: Date())
-            filename = "PearcleanerDiagnostics-\(timestamp).txt"
+            filename = "OnglaiDiagnostics-\(timestamp).txt"
         }
 
         let filePath = selectedFolder.appendingPathComponent(filename)

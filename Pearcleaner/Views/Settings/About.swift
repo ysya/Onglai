@@ -67,7 +67,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner")!)
+                            NSWorkspace.shared.open(AppLinks.repository)
                         } label: {
                             Text("View")
                         }
@@ -98,7 +98,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://ko-fi.com/ysyadev")!)
+                            NSWorkspace.shared.open(AppLinks.sponsorship)
                         } label: {
                             Text("Ko-fi")
                         }
@@ -129,7 +129,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner")!)
+                            NSWorkspace.shared.open(AppLinks.upstreamRepository)
                         } label: {
                             Text("View")
                         }
@@ -161,7 +161,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner/issues/new/choose")!)
+                            NSWorkspace.shared.open(AppLinks.newIssue)
                         } label: {
                             Text("View")
                         }
@@ -197,7 +197,7 @@ struct AboutSettingsTab: View {
 
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner/discussions/137")!)
+                            NSWorkspace.shared.open(AppLinks.upstreamTranslationCredits)
                         } label: {
                             Text("View")
                         }

@@ -622,7 +622,7 @@ struct FileDetailsItem: View {
                         InfoButton(
                             text: String(
                                 localized:
-                                    "Application file is nested within subdirectories. To prevent deleting incorrect folders, Pearcleaner will leave these alone. You may manually delete the remaining folders if required."
+                                    "Application file is nested within subdirectories. To prevent deleting incorrect folders, Onglai will leave these alone. You may manually delete the remaining folders if required."
                             ))
                     }
 

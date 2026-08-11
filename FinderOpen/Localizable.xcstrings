@@ -1,96 +1,120 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Pearcleaner Uninstall" : {
+    "Onglai Uninstall" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleaner Deinstallation"
+            "value" : "Mit Onglai deinstallieren"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desinstalar Pearcleaner"
+            "value" : "Desinstalar con Onglai"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Désinstaller avec Pearcleaner"
+            "value" : "Désinstaller avec Onglai"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hapus Instalasi Pearlcleaner"
+            "value" : "Copot pemasangan dengan Onglai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disinstalla con Onglai"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleanerでアンインストール"
+            "value" : "Onglaiでアンインストール"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onglai로 제거"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Odinstaluj za pomocą Pearcleaner"
+            "value" : "Odinstaluj za pomocą Onglai"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desinstalar o Pearcleaner"
+            "value" : "Desinstalar com o Onglai"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desinstalar com o Onglai"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Удалить через Pearcleaner"
+            "value" : "Удалить с помощью Onglai"
           }
         },
         "sk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Odinštalovať Pearcleanerom"
+            "value" : "Odinštalovať pomocou Onglai"
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odstrani z aplikacijo Onglai"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleaner ile Kaldırma"
+            "value" : "Onglai ile kaldır"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Видалити через Pearcleaner"
+            "value" : "Видалити за допомогою Onglai"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gỡ cài đặt Pearcleaner"
+            "value" : "Gỡ cài đặt bằng Onglai"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleaner 卸载"
+            "value" : "使用 Onglai 卸载"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleaner 解除安裝"
+            "value" : "使用 Onglai 解除安裝"
           }
         },
         "zh-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pearcleaner 解除安裝"
+            "value" : "使用 Onglai 解除安裝"
           }
         }
       }

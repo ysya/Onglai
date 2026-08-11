@@ -660,9 +660,12 @@ class AppPathFinder {
 
             tempCollection.append(contentsOf: spotlightOnly)
 
-            let excludePaths = outliersEx.map { $0.path }
+            let excludePaths = outliersEx.map { $0.standardizedFileURL.path }
             tempCollection.removeAll { url in
-                excludePaths.contains(url.path)
+                let path = url.standardizedFileURL.path
+                return excludePaths.contains { excludedPath in
+                    path == excludedPath || path.hasPrefix(excludedPath + "/")
+                }
             }
 
             // Apply app exclusion filter to ALL discovered files (from all code paths)
@@ -712,9 +715,12 @@ class AppPathFinder {
         //        printOS("Spotlight index found: \(spotlightOnly.count)")
         tempCollection.append(contentsOf: spotlightOnly)
 
-        let excludePaths = outliersEx.map { $0.path }
+        let excludePaths = outliersEx.map { $0.standardizedFileURL.path }
         tempCollection.removeAll { url in
-            excludePaths.contains(url.path)
+            let path = url.standardizedFileURL.path
+            return excludePaths.contains { excludedPath in
+                path == excludedPath || path.hasPrefix(excludedPath + "/")
+            }
         }
 
         // Apply app exclusion filter to ALL discovered files (from all code paths)

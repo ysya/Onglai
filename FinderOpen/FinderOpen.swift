@@ -26,7 +26,7 @@ class FinderOpen: FIFinderSync {
             if let selectedItemURLs = FIFinderSyncController.default().selectedItemURLs(),
                selectedItemURLs.count == 1, selectedItemURLs.first?.pathExtension == "app" {
                 // Add menu item if the selected item is a .app file
-                let menuItem = NSMenuItem(title: String(localized: "Pearcleaner Uninstall"), action: #selector(openInMyApp), keyEquivalent: "")
+                let menuItem = NSMenuItem(title: String(localized: "Onglai Uninstall"), action: #selector(openInMyApp), keyEquivalent: "")
                 // Add icon if enabled in main app
                 if UserDefaults.showAppIconInMenu {
                     if let appIcon = NSApp.applicationIconImage {

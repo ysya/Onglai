@@ -56,7 +56,7 @@ struct AppCommands: Commands {
             Button {
                 showCustomAlert(
                     title: "Warning!",
-                    message: "Pearcleaner and all of its files will be cleanly removed, are you sure?",
+                    message: "Onglai and all of its files will be cleanly removed, are you sure?",
                     okText: "Uninstall",
                     style: .warning,
                     onOk: {
@@ -64,7 +64,7 @@ struct AppCommands: Commands {
                     }
                 )
             } label: {
-                Label("Uninstall Pearcleaner", systemImage: "trash.fill")
+                Label("Uninstall Onglai", systemImage: "trash.fill")
             }
 
         }
@@ -344,7 +344,7 @@ struct AppCommands: Commands {
             // GitHub Menu
             Button
             {
-                NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner")!)
+                NSWorkspace.shared.open(AppLinks.repository)
             } label: {
                 Label("View Repository", systemImage: "paperplane")
             }
@@ -352,7 +352,7 @@ struct AppCommands: Commands {
 
             Button
             {
-                NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner/releases")!)
+                NSWorkspace.shared.open(AppLinks.releases)
             } label: {
                 Label("View Releases", systemImage: "paperplane")
             }
@@ -360,7 +360,7 @@ struct AppCommands: Commands {
 
             Button
             {
-                NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner/issues")!)
+                NSWorkspace.shared.open(AppLinks.issues)
             } label: {
                 Label("View Issues", systemImage: "paperplane")
             }
@@ -371,7 +371,7 @@ struct AppCommands: Commands {
 
             Button
             {
-                NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner/issues/new/choose")!)
+                NSWorkspace.shared.open(AppLinks.newIssue)
             } label: {
                 Label("Submit New Issue", systemImage: "paperplane")
             }
