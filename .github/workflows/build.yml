@@ -1,0 +1,35 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (Release, unsigned)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      # Compile-and-link check only. Code signing is skipped because the app
+      # group entitlement is team-restricted and CI has no signing identity;
+      # signed, notarizable builds still come from scripts/release.sh.
+      - name: Build
+        run: |
+          xcodebuild \
+            -project Pearcleaner.xcodeproj \
+            -scheme "Pearcleaner Release" \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet \
+            build
