@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F9C74F"/>
+      <stop offset="1" stop-color="#EE9B2E"/>
+    </linearGradient>
+    <clipPath id="bodyclip"><ellipse cx="0" cy="70" rx="210" ry="258"/></clipPath>
+  </defs>
+
+  <g transform="translate(500,540) rotate(-10)">
+    <!-- crown drawn as a broom head, planted behind the body -->
+    <g fill="#3E9B4F">
+      <path d="M-130,-115 L-175,-360 L-120,-345 L-85,-135 Z"/>
+      <path d="M-75,-140 L-95,-425 L-35,-410 L-30,-155 Z" fill="#57B26A"/>
+      <path d="M-20,-158 L-5,-465 L60,-440 L35,-158 Z"/>
+      <path d="M45,-150 L105,-415 L160,-372 L90,-135 Z" fill="#57B26A"/>
+      <path d="M95,-125 L185,-345 L228,-290 L135,-100 Z"/>
+    </g>
+
+    <!-- body -->
+    <ellipse cx="0" cy="70" rx="210" ry="258" fill="url(#body)"/>
+    <g clip-path="url(#bodyclip)" stroke="#D98F23" stroke-width="13" opacity="0.6">
+      <path d="M-300,-90 L210,380 M-300,40 L210,510 M-300,170 L210,640 M-300,-220 L210,250 M-300,-350 L210,120"/>
+      <path d="M300,-90 L-210,380 M300,40 L-210,510 M300,170 L-210,640 M300,-220 L-210,250 M300,-350 L-210,120"/>
+    </g>
+    <ellipse cx="0" cy="70" rx="210" ry="258" fill="none" stroke="#DD8F1F" stroke-width="12"/>
+
+    <!-- swept sparkles -->
+    <g transform="rotate(10)">
+      <path d="M300,-410 l16,38 38,16 -38,16 -16,38 -16,-38 -38,-16 38,-16 Z" fill="#F2C94C"/>
+      <path d="M392,-300 l11,26 26,11 -26,11 -11,26 -11,-26 -26,-11 26,-11 Z" fill="#F0D27E"/>
+      <circle cx="392" cy="-424" r="14" fill="#E5C888"/>
+    </g>
+  </g>
+</svg>

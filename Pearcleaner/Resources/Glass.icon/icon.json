@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "display-p3:0.93159,0.94081,0.94081,1.00000",
-      "display-p3:0.75900,0.75900,0.75900,1.00000"
+      "display-p3:1.00000,0.97000,0.90000,1.00000",
+      "display-p3:0.97000,0.88000,0.70000,1.00000"
     ]
   },
   "groups" : [
@@ -34,13 +34,13 @@
             }
           ],
           "hidden" : false,
-          "image-name" : "pear.heic",
-          "name" : "pear",
+          "image-name" : "onglai.heic",
+          "name" : "onglai",
           "position" : {
-            "scale" : 1.5,
+            "scale" : 1.1,
             "translation-in-points" : [
-              11.3046875,
-              3.296875
+              0,
+              0
             ]
           }
         }
