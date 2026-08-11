@@ -28,6 +28,12 @@ struct UpdateDetailView: View {
     @State private var isSearchingCasks: Bool = false
     @State private var showMASWarning = false
 
+    // Rendered release notes keyed by app id + notes hash. The WebKit-backed
+    // HTML importer is main-thread-only and expensive; parsing inline in the
+    // view body re-ran it (up to twice) on every re-evaluation, stalling the
+    // whole window's layout transaction whenever focus or state changed.
+    @State private var renderedNotes: [String: AttributedString] = [:]
+
     // Look up live app data from updateManager - this makes the view reactive to status changes
     private var app: UpdateableApp? {
         updateManager.updatesBySource.values
@@ -224,37 +230,15 @@ struct UpdateDetailView: View {
                 // Release description (HTML formatted) - scrollable section
                 // Priority 1: Fetched external notes, Priority 2: Inline description
                 if let preprocessed = processedReleaseNotes(for: app), !preprocessed.isEmpty {
+                        let notesKey = "\(app.id)-\(preprocessed.hashValue)"
                         ScrollView {
-                            // Try HTML parsing first
-                            if let htmlAttributedString = try? NSAttributedString(
-                                data: Data(preprocessed.utf8),
-                                options: [.documentType: NSAttributedString.DocumentType.html,
-                                         .characterEncoding: String.Encoding.utf8.rawValue],
-                                documentAttributes: nil
-                            ) {
-                                // Check if HTML parsing collapsed everything to one line
-                                let lineCount = htmlAttributedString.string.split(separator: "\n").count
-
-                                if lineCount == 1, let plainAttributedString = try? NSAttributedString(
-                                    data: Data(preprocessed.utf8),
-                                    options: [.documentType: NSAttributedString.DocumentType.plain,
-                                             .characterEncoding: String.Encoding.utf8.rawValue],
-                                    documentAttributes: nil
-                                ) {
-                                    // Fallback to plain text parsing to preserve formatting
-                                    let standardizedString = standardizeFont(in: plainAttributedString)
-                                    Text(standardizedString)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
-                                } else {
-                                    // HTML parsing preserved structure, use it
-                                    let standardizedString = standardizeFont(in: htmlAttributedString)
-                                    Text(standardizedString)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
-                                }
+                            if let rendered = renderedNotes[notesKey] {
+                                Text(rendered)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             } else {
-                                // HTML parsing failed entirely, show raw text (use original, untrimmed)
+                                // Raw text until the parsed version lands in the
+                                // cache (also the fallback when parsing fails)
                                 let originalDescription = (app.fetchedReleaseNotes ?? app.releaseDescription) ?? ""
                                 Text(originalDescription)
                                     .font(.body)
@@ -265,6 +249,12 @@ struct UpdateDetailView: View {
                         }
                         .scrollIndicators(scrollIndicators ? .visible : .hidden)
                         .frame(maxHeight: .infinity)
+                        .task(id: notesKey) {
+                            guard renderedNotes[notesKey] == nil else { return }
+                            if let rendered = renderReleaseNotes(preprocessed) {
+                                renderedNotes[notesKey] = rendered
+                            }
+                        }
                     } else {
                         // No release notes found - show message
                         VStack {
@@ -1126,6 +1116,29 @@ struct UpdateDetailView: View {
         if let url = urlComponents.url {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    // One-shot HTML -> AttributedString render, cached via renderedNotes.
+    // Mirrors the previous inline logic: HTML parse first, plain-text parse
+    // when HTML collapses everything onto one line, nil when parsing fails.
+    private func renderReleaseNotes(_ preprocessed: String) -> AttributedString? {
+        guard let htmlAttributedString = try? NSAttributedString(
+            data: Data(preprocessed.utf8),
+            options: [.documentType: NSAttributedString.DocumentType.html,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil
+        ) else { return nil }
+
+        let lineCount = htmlAttributedString.string.split(separator: "\n").count
+        if lineCount == 1, let plainAttributedString = try? NSAttributedString(
+            data: Data(preprocessed.utf8),
+            options: [.documentType: NSAttributedString.DocumentType.plain,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil
+        ) {
+            return standardizeFont(in: plainAttributedString)
+        }
+        return standardizeFont(in: htmlAttributedString)
     }
 
     private func processedReleaseNotes(for app: UpdateableApp) -> String? {
