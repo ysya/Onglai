@@ -33,13 +33,51 @@ struct AboutSettingsTab: View {
                 }
                 .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
 
-                Text("Made with ❤️ by Alin Lupascu").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.footnote)
+                VStack(spacing: 4) {
+                    Text("Based on Pearcleaner, made with ❤️ by Alin Lupascu")
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                        .font(.footnote)
+                    Text("Personal fork by ysya · Apache 2.0 with Commons Clause")
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                        .font(.footnote)
+                }
 
             }
             .padding(.vertical, 50)
 
 
             VStack(spacing: 20) {
+                // Original project attribution
+                PearGroupBox(header: { Text("Original Project").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title) }, content: {
+                    HStack{
+                        Image(systemName: "arrow.triangle.branch")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                            .frame(width: 20, height: 20)
+                            .padding(.trailing)
+
+                        VStack(alignment: .leading){
+                            Text("Pearcleaner by Alin Lupascu (alienator88)")
+                                .font(.title3)
+                                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                        }
+                        Spacer()
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner")!)
+                        } label: {
+                            Text("View")
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .controlGroup(Capsule(style: .continuous), level: .primary)
+                    }
+
+                })
+
                 // GitHub
                 PearGroupBox(header: { Text("Support").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title) }, content: {
                     HStack{
@@ -58,7 +96,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/alienator88/Pearcleaner/issues/new/choose")!)
+                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner/issues")!)
                         } label: {
                             Text("View")
                         }
