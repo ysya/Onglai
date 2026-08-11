@@ -31,6 +31,13 @@ class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
             print("❌ Rejected connection from unauthorized client")
             return false
         }
+        // Kernel-enforced per-message requirement: caller must be this team's
+        // signed main app. Closes the PID-reuse window that the point-in-time
+        // certificate chain comparison above cannot; subject.OU pins the team
+        // so the requirement survives certificate renewals.
+        newConnection.setCodeSigningRequirement(
+            "anchor apple generic and identifier \"me.ysya.Onglai\" and certificate leaf[subject.OU] = VNGFZ627N6"
+        )
         newConnection.exportedInterface = NSXPCInterface(with: HelperToolProtocol.self)
         newConnection.exportedObject = self
         newConnection.invalidationHandler = { [weak self] in
