@@ -34,10 +34,13 @@ struct AboutSettingsTab: View {
                 .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
 
                 VStack(spacing: 4) {
-                    Text("Based on Pearcleaner, made with ❤️ by Alin Lupascu")
+                    Text("Onglai is maintained with ❤️ by ysya")
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                         .font(.footnote)
-                    Text("Personal fork by ysya · Apache 2.0 with Commons Clause")
+                    Text("Based on Pearcleaner by Alin Lupascu")
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                        .font(.footnote)
+                    Text("Apache 2.0 with Commons Clause")
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                         .font(.footnote)
                 }
@@ -47,6 +50,68 @@ struct AboutSettingsTab: View {
 
 
             VStack(spacing: 20) {
+                // Maintained fork
+                PearGroupBox(header: { Text("Onglai Project").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title) }, content: {
+                    HStack{
+                        Image(systemName: "shippingbox")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                            .frame(width: 20, height: 20)
+                            .padding(.trailing)
+
+                        VStack(alignment: .leading){
+                            Text("Maintained by ysya")
+                                .font(.title3)
+                                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                        }
+                        Spacer()
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner")!)
+                        } label: {
+                            Text("View")
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .controlGroup(Capsule(style: .continuous), level: .primary)
+                    }
+
+                })
+
+                // Sponsorship
+                PearGroupBox(header: { Text("Support Onglai").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title) }, content: {
+                    HStack{
+                        Image(systemName: "heart")
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(.pink)
+                            .frame(width: 20, height: 20)
+                            .padding(.trailing)
+
+                        VStack(alignment: .leading){
+                            Text("Support ongoing development on Ko-fi")
+                                .font(.title3)
+                                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                        }
+                        Spacer()
+                        Button {
+                            NSWorkspace.shared.open(URL(string: "https://ko-fi.com/ysyadev")!)
+                        } label: {
+                            Text("Ko-fi")
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .controlGroup(Capsule(style: .continuous), level: .primary)
+                    }
+
+                })
+
                 // Original project attribution
                 PearGroupBox(header: { Text("Original Project").foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText).font(.title) }, content: {
                     HStack{
@@ -96,7 +161,7 @@ struct AboutSettingsTab: View {
                         }
                         Spacer()
                         Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner/issues")!)
+                            NSWorkspace.shared.open(URL(string: "https://github.com/ysya/Pearcleaner/issues/new/choose")!)
                         } label: {
                             Text("View")
                         }
@@ -121,7 +186,7 @@ struct AboutSettingsTab: View {
                             .padding(.trailing)
 
                         VStack(alignment: .leading, spacing: 10){
-                            Text("A **huge** thank you to everyone who has contributed so far!")
+                            Text("Thanks to the original Pearcleaner translation contributors!")
                                 .font(.title3)
                                 .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                             Text(translators)

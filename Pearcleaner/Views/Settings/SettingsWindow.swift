@@ -100,12 +100,11 @@ struct SettingsView: View {
 //                        #endif
 
                     case .about:
-                        // About tab toolbar item
                         Button(action: {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/alienator88")!)
+                            NSWorkspace.shared.open(URL(string: "https://ko-fi.com/ysyadev")!)
                         }, label: {
                             Label {
-                                Text("Sponsor Pearcleaner")
+                                Text("Support Onglai")
                                     .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                                     .font(.body)
                                     .bold()
@@ -118,7 +117,7 @@ struct SettingsView: View {
                             }
                             .labelStyle(.titleAndIcon)
                         })
-                        .help("Supports Alin Lupascu, the author of the original Pearcleaner project")
+                        .help("Support Onglai development on Ko-fi")
 
                     default:
                         // No toolbar items for other tabs
