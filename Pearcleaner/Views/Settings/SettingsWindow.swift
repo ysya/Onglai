@@ -105,7 +105,7 @@ struct SettingsView: View {
                             NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/alienator88")!)
                         }, label: {
                             Label {
-                                Text("Sponsor")
+                                Text("Sponsor Pearcleaner")
                                     .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                                     .font(.body)
                                     .bold()
@@ -118,6 +118,7 @@ struct SettingsView: View {
                             }
                             .labelStyle(.titleAndIcon)
                         })
+                        .help("Supports Alin Lupascu, the author of the original Pearcleaner project")
 
                     default:
                         // No toolbar items for other tabs
