@@ -279,7 +279,7 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
             appStoreURL: nil,
             status: .idle,
             progress: 0.0,
-            isSelectedForUpdate: false,
+            isSelectedForUpdate: true,
             releaseTitle: releaseTitle,
             releaseDescription: releaseDescription,
             releaseNotesLink: releaseNotesLink,

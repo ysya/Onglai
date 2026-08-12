@@ -125,9 +125,60 @@ struct UpdateableApp: Identifiable, Hashable {
     }
 }
 
+enum UpdaterItemSection: String {
+    case available
+    case external
+    case attention
+    case current
+    case unsupported
+}
+
+struct UpdaterSourceIssue: Hashable {
+    let source: UpdateSource
+    let message: String
+}
+
+/// A single app-centric row in the updater. An app may be reported by more
+/// than one source, but should only occupy one place in the interface.
+struct UpdaterListItem: Identifiable, Hashable {
+    let id: String
+    let section: UpdaterItemSection
+    let appInfo: AppInfo?
+    let primaryApp: UpdateableApp?
+    let alternateApps: [UpdateableApp]
+    let issues: [UpdaterSourceIssue]
+
+    var appName: String {
+        appInfo?.appName ?? primaryApp?.appInfo.appName ?? String(localized: "Apps")
+    }
+
+    var sources: [UpdateSource] {
+        if !issues.isEmpty {
+            return issues.map(\.source)
+        }
+
+        let allSources = [primaryApp?.source].compactMap { $0 } + alternateApps.map(\.source)
+        return Array(Set(allSources)).sorted { $0.rawValue < $1.rawValue }
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: UpdaterListItem, rhs: UpdaterListItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 // Conform to FuzzySearchable for automatic fuzzy search support in GenericSidebarListView
 extension UpdateableApp: FuzzySearchable {
     var searchableString: String {
         return appInfo.appName
+    }
+}
+
+extension UpdaterListItem: FuzzySearchable {
+    var searchableString: String {
+        appName
     }
 }

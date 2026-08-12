@@ -12,16 +12,16 @@ struct AppsUpdaterView: View {
     @EnvironmentObject var updateManager: UpdateManager
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var updater: Updater
+    @EnvironmentObject var brewManager: HomebrewManager
     @Environment(\.colorScheme) var colorScheme
     @ObservedObject private var consoleManager = GlobalConsoleManager.shared
     @State private var searchText = ""
     @State private var hiddenSidebar: Bool = false
-    @State private var selectedApp: UpdateableApp? = nil
+    @State private var selectedItemID: String?
     @AppStorage("settings.interface.scrollIndicators") private var scrollIndicators: Bool = false
     @AppStorage("settings.interface.animationEnabled") private var animationEnabled: Bool = true
     @AppStorage("settings.updater.sources") private var sourcesData: Data = UpdaterSourcesSettings.defaultEncoded()
     @AppStorage("settings.updater.display") private var displayData: Data = UpdaterDisplaySettings.defaultEncoded()
-    @AppStorage("settings.interface.startupView") private var startupView: Int = CurrentPage.applications.rawValue
 
     // Computed properties for convenient access
     private var sources: UpdaterSourcesSettings {
@@ -42,94 +42,108 @@ struct AppsUpdaterView: View {
         }
     }
 
-    // Collect all apps across all sources (exclude unsupported and current apps - they can't/don't need updates)
-    private var allApps: [UpdateableApp] {
-        updateManager.updatesBySource.values.flatMap { $0 }.filter {
-            $0.source != .unsupported && $0.source != .current && $0.source != .appStore
+    private var allItems: [UpdaterListItem] {
+        updateManager.appCentricItems.filter { item in
+            switch item.section {
+            case .current: return display.showCurrent
+            case .unsupported: return display.showUnsupported
+            default: return true
+            }
         }
     }
 
-    // Count selected apps across all sources
-    private var selectedAppsCount: Int {
-        allApps.filter { $0.isSelectedForUpdate }.count
+    private var selectedItem: UpdaterListItem? {
+        allItems.first { $0.id == selectedItemID }
     }
 
+    private var directItems: [UpdaterListItem] {
+        allItems.filter { $0.section == .available }
+    }
 
-    // Sidebar categories
-    private var sidebarCategories: [(String, (UpdateableApp) -> Bool, Bool, Bool)] {
-        var cats: [(String, (UpdateableApp) -> Bool, Bool, Bool)] = []
-        if sources.appStore.enabled {
-            cats.append(("App Store", { $0.source == .appStore }, true, updateManager.scanningSources.contains(.appStore)))
-        }
-        if sources.homebrew.enabled {
-            cats.append(("Homebrew", { $0.source == .homebrew }, true, updateManager.scanningSources.contains(.homebrew)))
-        }
-        if sources.sparkle.enabled {
-            cats.append(("Sparkle", { $0.source == .sparkle }, true, updateManager.scanningSources.contains(.sparkle)))
-        }
-        // Show Current category if enabled
+    private var selectedDirectItems: [UpdaterListItem] {
+        directItems.filter { $0.primaryApp?.isSelectedForUpdate == true }
+    }
+
+    private var externalItems: [UpdaterListItem] {
+        allItems.filter { $0.section == .external }
+    }
+
+    private var attentionItems: [UpdaterListItem] {
+        allItems.filter { $0.section == .attention }
+    }
+
+    private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
+        var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
+            (String(localized: "Update Available"), { $0.section == .available }, true, updateManager.scanningSources.contains(.homebrew) || updateManager.scanningSources.contains(.sparkle)),
+            (String(localized: "Update in App Store"), { $0.section == .external }, true, updateManager.scanningSources.contains(.appStore)),
+            (String(localized: "Error"), { $0.section == .attention }, true, false)
+        ]
         if display.showCurrent {
-            cats.append(("Current", { $0.source == .current }, false, false))
+            cats.append((String(localized: "Current"), { $0.section == .current }, false, false))
         }
-        // Show Unsupported if enabled
         if display.showUnsupported {
-            cats.append(("Unsupported", { $0.source == .unsupported }, false, false))
+            cats.append((String(localized: "Unsupported"), { $0.section == .unsupported }, false, false))
         }
         return cats
-    }
-
-    // All updateable apps for sidebar
-    private var allUpdateableApps: [UpdateableApp] {
-        updateManager.updatesBySource.values.flatMap { $0 }
     }
 
     var body: some View {
         ZStack {
             SidebarDetailLayout {
                 GenericSidebarListView(
-                    items: allUpdateableApps,
+                    items: allItems,
                     categories: sidebarCategories,
                     searchText: $searchText,
                     emptyMessage: "No apps to update",
                     noResultsMessage: "No matching apps",
                     isLoading: updateManager.isScanning,
                     loadingMessage: "Loading.."
-                ) { app in
+                ) { item in
                     UpdateRowViewSidebar(
-                        app: app,
-                        isSelected: selectedApp?.id == app.id,
+                        item: item,
+                        isSelected: selectedItemID == item.id,
                         onTap: {
-                            if selectedApp?.id == app.id {
-                                // Deselect if tapping the same app
-                                selectedApp = nil
+                            if selectedItemID == item.id {
+                                selectedItemID = nil
                             } else {
-                                // Select new app
-                                selectedApp = app
+                                selectedItemID = item.id
                             }
                         }
                     )
                 }
             } detail: {
-                Group {
-                    if let app = selectedApp {
-                        UpdateDetailView(appId: app.id)
-                    } else {
-                        VStack {
-                            Spacer()
-                            Text("Select an app to view details")
-                                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                .font(.title2)
-                            Spacer()
+                VStack(spacing: 0) {
+                    Group {
+                        if let item = selectedItem, !item.issues.isEmpty {
+                            UpdateFailureDetailView(item: item) {
+                                Task {
+                                    await updateManager.scanIfNeeded(
+                                        forceReload: false,
+                                        sources: Set(item.issues.map(\.source))
+                                    )
+                                }
+                            }
+                        } else if let app = selectedItem?.primaryApp {
+                            UpdateDetailView(appId: app.id)
+                        } else {
+                            UpdaterOverviewView(
+                                directUpdateCount: directItems.count,
+                                externalUpdateCount: externalItems.count,
+                                issueCount: attentionItems.count,
+                                installedBrewCount: brewManager.allPackages.count,
+                                outdatedBrewCount: brewManager.outdatedPackagesMap.count,
+                                isLoadingBrew: brewManager.isLoadingPackages || brewManager.isLoadingOutdated,
+                                openHomebrew: { appState.currentPage = .homebrew }
+                            )
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+
+                    batchActionBar
                 }
             }
-            .onChange(of: allUpdateableApps) { newApps in
-                // Auto-clear selectedApp if it no longer exists in the updates list
-                if let selected = selectedApp,
-                   !newApps.contains(where: { $0.id == selected.id }) {
-                    selectedApp = nil
+            .onChange(of: allItems.map(\.id)) { itemIDs in
+                if let selectedItemID, !itemIDs.contains(selectedItemID) {
+                    self.selectedItemID = nil
                 }
             }
             .opacity(hiddenSidebar ? 0.5 : 1)
@@ -189,30 +203,6 @@ struct AppsUpdaterView: View {
                 }
                 .help("Toggle console output")
 
-                Button {
-                    selectAllApps()
-                    updateSelectedApps()
-                } label: {
-                    if updateManager.isUpdatingAll {
-                        // Show circular progress with count during batch update
-                        CircularProgressView(
-                            progress: updateManager.updateAllProgress,
-                            size: 20,
-                            lineWidth: 3,
-                            badgeText: "\(updateManager.completedAppsCount)/\(updateManager.totalAppsToUpdate)"
-                        )
-                    } else {
-                        Label("Update All", systemImage: "arrow.down.circle")
-                            .badge(allApps.count)
-                    }
-                }
-                .help(updateManager.isUpdatingAll
-                      ? "Updating apps..."
-                      : allApps.isEmpty && updateManager.totalUpdateCount > 0
-                        ? "Update in App Store"
-                        : "Update all available apps")
-                .disabled(allApps.isEmpty || !updateManager.scanningSources.isEmpty || updateManager.isUpdatingAll)
-
                 if updateManager.isScanning {
                     // Show stop button during scan
                     Button {
@@ -248,6 +238,10 @@ struct AppsUpdaterView: View {
             }
         }
         .task {
+            if sources.homebrew.enabled, !brewManager.hasLoadedInstalledPackages {
+                Task { await brewManager.loadInstalledPackages() }
+            }
+
             // Skip scan if background scan already completed
             guard updateManager.lastScanDate == nil else {
                 GlobalConsoleManager.shared.appendOutput("Using cached updates from background scan\n", source: CurrentPage.updater.title)
@@ -265,35 +259,259 @@ struct AppsUpdaterView: View {
         }
     }
 
-    private func selectAllApps() {
-        // Select all apps across all sources (skip unsupported - they can't be updated)
-        for (source, apps) in updateManager.updatesBySource {
-            guard source != .unsupported, source != .current, source != .appStore else { continue }
-            var updatedApps = apps
-            for index in updatedApps.indices {
-                updatedApps[index].isSelectedForUpdate = true
-            }
-            updateManager.updatesBySource[source] = updatedApps
-        }
-    }
-
-//    private func deselectAllApps() {
-//        // Deselect all apps across all sources (skip unsupported - they can't be updated)
-//        for (source, apps) in updateManager.updatesBySource {
-//            guard source != .unsupported else { continue }
-//            var updatedApps = apps
-//            for index in updatedApps.indices {
-//                updatedApps[index].isSelectedForUpdate = false
-//            }
-//            updateManager.updatesBySource[source] = updatedApps
-//        }
-//    }
-
     private func updateSelectedApps() {
-        GlobalConsoleManager.shared.appendOutput("Starting update of \(selectedAppsCount) selected app(s)...\n", source: CurrentPage.updater.title)
+        GlobalConsoleManager.shared.appendOutput("Starting update of \(selectedDirectItems.count) selected app(s)...\n", source: CurrentPage.updater.title)
         Task {
             await updateManager.updateSelectedApps()
             GlobalConsoleManager.shared.appendOutput("✓ Completed update operation\n", source: CurrentPage.updater.title)
+        }
+    }
+
+    @ViewBuilder
+    private var batchActionBar: some View {
+        if !directItems.isEmpty || !externalItems.isEmpty {
+            Divider()
+            HStack(spacing: 12) {
+                if updateManager.isUpdatingAll {
+                    ProgressView(value: updateManager.updateAllProgress)
+                        .frame(maxWidth: 180)
+                    Text(verbatim: "\(updateManager.completedAppsCount)/\(updateManager.totalAppsToUpdate)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Update all available apps")
+                            .font(.callout.weight(.medium))
+                    }
+                }
+
+                Spacer()
+
+                Button {
+                    updateSelectedApps()
+                } label: {
+                    Label(
+                        String(localized: "Update All"),
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(selectedDirectItems.isEmpty || updateManager.isScanning || updateManager.isUpdatingAll)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.bar)
+        }
+    }
+}
+
+private struct UpdaterOverviewView: View {
+    let directUpdateCount: Int
+    let externalUpdateCount: Int
+    let issueCount: Int
+    let installedBrewCount: Int
+    let outdatedBrewCount: Int
+    let isLoadingBrew: Bool
+    let openHomebrew: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Updater")
+                        .font(.largeTitle.bold())
+                    Text("Perform updates on 3rd party apps, and more")
+                        .font(.callout)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                }
+
+                HStack(spacing: 12) {
+                    UpdaterSummaryCard(
+                        title: "Update Available",
+                        count: directUpdateCount,
+                        systemImage: "arrow.down.circle.fill",
+                        tint: .blue
+                    )
+                    UpdaterSummaryCard(
+                        title: "App Store",
+                        count: externalUpdateCount,
+                        systemImage: "macwindow",
+                        tint: .purple
+                    )
+                    UpdaterSummaryCard(
+                        title: "Error",
+                        count: issueCount,
+                        systemImage: "exclamationmark.triangle.fill",
+                        tint: .orange
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "mug.fill")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+                            .frame(width: 34, height: 34)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 8) {
+                                Text("Homebrew Manager")
+                                    .font(.headline)
+                                if isLoadingBrew {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
+                            Text("Manage Homebrew packages, taps, and maintenance")
+                                .font(.callout)
+                                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                        }
+
+                        Spacer()
+
+                        Button("Homebrew Manager", action: openHomebrew)
+                            .buttonStyle(.bordered)
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 20) {
+                        Label {
+                            Text(verbatim: "\(installedBrewCount) ") + Text("Installed")
+                        } icon: {
+                            Image(systemName: "shippingbox")
+                        }
+                        Label {
+                            Text(verbatim: "\(outdatedBrewCount) ") + Text("Outdated")
+                        } icon: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        .foregroundStyle(outdatedBrewCount > 0 ? .orange : ThemeColors.shared(for: colorScheme).secondaryText)
+                    }
+                    .font(.callout.monospacedDigit())
+                }
+                .padding(18)
+                .background(ThemeColors.shared(for: colorScheme).secondaryBG.opacity(0.62), in: RoundedRectangle(cornerRadius: 14))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("From source", systemImage: "point.3.connected.trianglepath.dotted")
+                        .font(.headline)
+                    HStack(spacing: 18) {
+                        Label("App Store", systemImage: "macwindow")
+                        Label("Homebrew", systemImage: "terminal")
+                        Label("Sparkle", systemImage: "sparkles")
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(32)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+}
+
+private struct UpdaterSummaryCard: View {
+    let title: LocalizedStringKey
+    let count: Int
+    let systemImage: String
+    let tint: Color
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title2)
+                .foregroundStyle(tint)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: "\(count)")
+                    .font(.title2.bold().monospacedDigit())
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(ThemeColors.shared(for: colorScheme).secondaryBG.opacity(0.62), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct UpdateFailureDetailView: View {
+    let item: UpdaterListItem
+    let retry: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var updateManager: UpdateManager
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(spacing: 16) {
+                    if let icon = item.appInfo?.appIcon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 38))
+                            .foregroundStyle(.orange)
+                            .frame(width: 64, height: 64)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: item.appName)
+                            .font(.title.bold())
+                        Text("Check for Updates")
+                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(item.issues.enumerated()), id: \.offset) { _, issue in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label(issue.source.rawValue, systemImage: sourceSymbol(issue.source))
+                                .font(.headline)
+                            Text(verbatim: issue.message)
+                                .font(.callout)
+                                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                                .textSelection(.enabled)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+
+                Button(action: retry) {
+                    Label("Retry", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(updateManager.isScanning)
+            }
+            .frame(maxWidth: 700, alignment: .leading)
+            .padding(36)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+
+    private func sourceSymbol(_ source: UpdateSource) -> String {
+        switch source {
+        case .homebrew: return "terminal"
+        case .appStore: return "macwindow"
+        case .sparkle: return "sparkles"
+        case .unsupported: return "questionmark.circle"
+        case .current: return "checkmark.circle"
         }
     }
 }

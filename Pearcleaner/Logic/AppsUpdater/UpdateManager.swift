@@ -165,6 +165,106 @@ class UpdateManager: ObservableObject {
             .reduce(0) { $0 + $1.count }
     }
 
+    /// Presents one row per installed app instead of one row per update source.
+    /// The underlying source results remain intact so existing update and detail
+    /// flows can continue to operate on their original records.
+    var appCentricItems: [UpdaterListItem] {
+        let sourceApps = updatesBySource.values.flatMap { $0 }
+        let actionableApps = sourceApps.filter { $0.source != .current && $0.source != .unsupported }
+        var items: [UpdaterListItem] = []
+
+        for (_, candidates) in Dictionary(grouping: actionableApps, by: { $0.appInfo.path.standardizedFileURL }) {
+            guard let primary = preferredUpdate(from: candidates) else { continue }
+            items.append(
+                UpdaterListItem(
+                    id: "update:\(primary.appInfo.path.standardizedFileURL.path)",
+                    section: primary.appInfo.isAppStore || primary.source == .appStore ? .external : .available,
+                    appInfo: primary.appInfo,
+                    primaryApp: primary,
+                    alternateApps: candidates.filter { $0.id != primary.id },
+                    issues: []
+                )
+            )
+        }
+
+        let pathsWithUpdates = Set(actionableApps.map { $0.appInfo.path.standardizedFileURL })
+        var issuesByPath: [URL: [UpdaterSourceIssue]] = [:]
+        for (source, failures) in scanFailuresBySource {
+            for failure in failures {
+                let path = failure.appPath.standardizedFileURL
+                guard !pathsWithUpdates.contains(path) else { continue }
+                issuesByPath[path, default: []].append(
+                    UpdaterSourceIssue(source: source, message: failure.message)
+                )
+            }
+        }
+
+        for (path, issues) in issuesByPath {
+            let appInfo = AppState.shared.sortedApps.first { $0.path.standardizedFileURL == path }
+            let isUnsupportedConfiguration = issues.allSatisfy {
+                $0.message == "No valid Sparkle feed URL was found"
+            }
+            items.append(
+                UpdaterListItem(
+                    id: "issue:\(path.path)",
+                    section: isUnsupportedConfiguration ? .unsupported : .attention,
+                    appInfo: appInfo,
+                    primaryApp: nil,
+                    alternateApps: [],
+                    issues: issues.sorted { $0.source.rawValue < $1.source.rawValue }
+                )
+            )
+        }
+
+        for source in [UpdateSource.current, .unsupported] {
+            let section: UpdaterItemSection = source == .current ? .current : .unsupported
+            for app in updatesBySource[source] ?? [] {
+                let path = app.appInfo.path.standardizedFileURL
+                items.append(
+                    UpdaterListItem(
+                        id: "\(source.rawValue):\(path.path)",
+                        section: section,
+                        appInfo: app.appInfo,
+                        primaryApp: app,
+                        alternateApps: [],
+                        issues: []
+                    )
+                )
+            }
+        }
+
+        return items.sorted { $0.appName.localizedStandardCompare($1.appName) == .orderedAscending }
+    }
+
+    private func preferredUpdate(from candidates: [UpdateableApp]) -> UpdateableApp? {
+        candidates.min { lhs, rhs in
+            updateSourcePriority(for: lhs) < updateSourcePriority(for: rhs)
+        }
+    }
+
+    private func updateSourcePriority(for app: UpdateableApp) -> Int {
+        if app.appInfo.isAppStore, app.source == .appStore { return 0 }
+        if app.appInfo.cask != nil, app.source == .homebrew { return 1 }
+        if app.source == .sparkle { return 2 }
+        if app.source == .homebrew { return 3 }
+        if app.source == .appStore { return 4 }
+        return 5
+    }
+
+    func setSelection(forAppAt path: URL, selected: Bool) {
+        for source in [UpdateSource.homebrew, .sparkle] {
+            guard var apps = updatesBySource[source] else { continue }
+            var changed = false
+            for index in apps.indices where apps[index].appInfo.path.standardizedFileURL == path.standardizedFileURL {
+                apps[index].isSelectedForUpdate = selected
+                changed = true
+            }
+            if changed {
+                updatesBySource[source] = apps
+            }
+        }
+    }
+
     /// Progress of batch update (0.0 to 1.0)
     var updateAllProgress: Double {
         guard totalAppsToUpdate > 0 else { return 0 }
@@ -848,10 +948,12 @@ class UpdateManager: ObservableObject {
 
     /// Update all selected apps across all sources (concurrent per-source)
     func updateSelectedApps() async {
-        let candidates = updatesBySource
-            .filter { $0.key == .homebrew || $0.key == .sparkle }
-            .values
-            .flatMap { $0 }
+        // Use the same app-centric ownership decision as the UI. This keeps an
+        // App Store-owned app out of Update All even if Sparkle also reports it,
+        // and prevents an alternate source from running behind the visible row.
+        let candidates = appCentricItems
+            .filter { $0.section == .available }
+            .compactMap(\.primaryApp)
             .filter { $0.isSelectedForUpdate }
 
         // The same bundle can be reported by both Homebrew and Sparkle. Never
