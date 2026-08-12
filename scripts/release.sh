@@ -146,9 +146,9 @@ fi
 
 [ -d "$APP" ] || { echo "error: exported Onglai.app not found" >&2; exit 1; }
 
-ACTUAL_TEAM=$(codesign --display --verbose=4 "$APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')
-ACTUAL_IDENTIFIER=$(codesign --display --verbose=4 "$APP" 2>&1 | awk -F= '/^Identifier=/{print $2; exit}')
-HELPER_TEAM=$(codesign --display --verbose=4 "$APP/Contents/MacOS/PearcleanerHelper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}')
+ACTUAL_TEAM=$(codesign --display --verbose=4 "$APP" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')
+ACTUAL_IDENTIFIER=$(codesign --display --verbose=4 "$APP" 2>&1 | awk -F= '/^Identifier=/{print $2}')
+HELPER_TEAM=$(codesign --display --verbose=4 "$APP/Contents/MacOS/PearcleanerHelper" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')
 
 [ "$ACTUAL_TEAM" = "$TEAM_ID" ] || { echo "error: app was signed by unexpected team $ACTUAL_TEAM" >&2; exit 1; }
 [ "$HELPER_TEAM" = "$TEAM_ID" ] || { echo "error: helper was signed by unexpected team $HELPER_TEAM" >&2; exit 1; }
