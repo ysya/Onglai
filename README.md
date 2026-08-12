@@ -23,13 +23,21 @@ Onglai is a maintained continuation of [Pearcleaner](https://github.com/alienato
 
 ## Install
 
-Grab the latest build from [Releases](https://github.com/ysya/Onglai/releases), unzip, and drop `Onglai.app` into `/Applications`. New public releases are required to pass Developer ID signing, Apple notarization, and Gatekeeper verification before they can be published. Historical development-signed builds, including 5.4.5 and earlier, may still require **System Settings → Privacy & Security → Open Anyway**.
+Grab the latest build from [Releases](https://github.com/ysya/Onglai/releases), unzip, and drop `Onglai.app` into `/Applications`. Current free releases are signed with the maintainer's Apple Development identity but cannot be notarized, so the first launch requires **System Settings → Privacy & Security → Open Anyway**.
 
 Grant **Full Disk Access** when prompted so the cleaner can actually see app leftovers.
 
 ## Releasing
 
-Public releases require an active Apple Developer Program membership, a `Developer ID Application` identity, an app group registered to the distribution team, and `notarytool` credentials stored in the login keychain. Once those are available:
+Free development-signed release:
+
+```bash
+ONGLAI_RELEASE_MODE=development \
+ONGLAI_DEVELOPMENT_TEAM=ABCDE12345 \
+scripts/release.sh 5.4.6
+```
+
+For a Gatekeeper-trusted release, use an active Apple Developer Program membership, a `Developer ID Application` identity, an app group registered to the distribution team, and `notarytool` credentials stored in the login keychain:
 
 ```bash
 ONGLAI_DEVELOPMENT_TEAM=ABCDE12345 \
@@ -37,7 +45,7 @@ ONGLAI_NOTARY_PROFILE=onglai-notary \
 scripts/release.sh 5.4.6
 ```
 
-The script refuses Apple Development identities and publishes through a draft only after the exported app has been notarized, stapled, and accepted by Gatekeeper.
+Both modes verify the app and helper signing team before publishing through a draft. Developer ID mode additionally requires notarization, stapling, and Gatekeeper acceptance.
 
 ## 中文簡介
 
@@ -45,7 +53,7 @@ Onglai（旺來）是 [Pearcleaner](https://github.com/alienator88/Pearcleaner) 
 
 在原版之上，Onglai 修掉了幾個查到根因的老 bug（`open`/Raycast 啟動即退出、release notes HTML 解析造成的全域卡頓、工具列圖示跑版），並加上**誤刪防護網**——使用者內容資料夾（文件、桌面、下載等）無論名稱怎麼匹配都不會出現在刪除清單裡。
 
-安裝：從 [Releases](https://github.com/ysya/Onglai/releases) 下載解壓，拖進「應用程式」。新版公開發佈必須先通過 Developer ID 簽章、Apple 公證與 Gatekeeper 驗證；5.4.5 以前的歷史開發簽章版本仍可能需要到 **系統設定 → 隱私權與安全性 → 強制打開**。安裝後請依提示授權**完全磁碟取用**。
+安裝：從 [Releases](https://github.com/ysya/Onglai/releases) 下載解壓，拖進「應用程式」。目前免費發佈版使用維護者的 Apple Development 憑證簽章，但無法送 Apple 公證；首次開啟需要到 **系統設定 → 隱私權與安全性 → 強制打開**。安裝後請依提示授權**完全磁碟取用**。
 
 ## License
 
