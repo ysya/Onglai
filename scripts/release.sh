@@ -54,8 +54,8 @@ else
   IDENTITY_NAME="Developer ID Application:"
 fi
 
-if ! security find-identity -v -p codesigning | grep -F "$IDENTITY_NAME" | grep -F "($TEAM_ID)" >/dev/null; then
-  echo "error: no ${IDENTITY_NAME%:} identity found for team $TEAM_ID" >&2
+if ! security find-identity -v -p codesigning | grep -F "$IDENTITY_NAME" >/dev/null; then
+  echo "error: no ${IDENTITY_NAME%:} identity found" >&2
   exit 1
 fi
 
