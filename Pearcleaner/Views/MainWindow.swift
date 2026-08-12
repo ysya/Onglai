@@ -307,23 +307,34 @@ struct MainWindow: View {
                     .sheet(isPresented: $showPermissionList) {
                         PermissionsSheetView()
                     }
-                } else if helperToolManager.shouldShowHelperBadge {
-                    noticeButton(
-                        image: "gear",
-                        color: .orange,
-                        help: "Helper Not Installed"
-                    ) {
-                        // One look is enough: opening the Helper tab retires
-                        // the badge for good, since running helper-less is a
-                        // supported default rather than a problem to nag about
-                        helperToolManager.dismissHelperBadge()
-                        openAppSettingsWindow(tab: .helper, updater: updater)
-                    }
                 }
+
+                settingsButton
 
             }
 
         }
+    }
+
+    private var settingsButton: some View {
+        let shouldHighlightHelper = helperToolManager.shouldShowHelperBadge
+
+        return Button {
+            if shouldHighlightHelper {
+                // Opening the Helper tab retires the one-time highlight, while
+                // the settings entry itself remains available at all times.
+                helperToolManager.dismissHelperBadge()
+                openAppSettingsWindow(tab: .helper, updater: updater)
+            } else {
+                openAppSettingsWindow(updater: updater)
+            }
+        } label: {
+            Image(systemName: "gear")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(shouldHighlightHelper ? .orange : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(shouldHighlightHelper ? "Helper Not Installed" : "Settings")
     }
 
     @ViewBuilder
@@ -927,4 +938,3 @@ struct VolumeItemView: View {
     }
 
 }
-
