@@ -335,39 +335,44 @@ class HomebrewController: ObservableObject {
         // Store process reference for cancellation
         await MainActor.run { runningProcess = process }
 
-        try process.run()
-
-        // Read pipes on background thread with console streaming
-        let (outputData, errorData) = await withCheckedContinuation { continuation in
-            Task.detached {
-                var outputData = Data()
-                var errorData = Data()
-
-                let outputHandle = outputPipe.fileHandleForReading
-                let errorHandle = errorPipe.fileHandleForReading
-
-                // Read output with streaming to console
-                while true {
-                    let chunk = outputHandle.availableData
-                    if chunk.isEmpty { break }
-                    outputData.append(chunk)
-
-                    // Stream to console if enabled - check dynamically to support mid-operation console opening
-                    if let text = String(data: chunk, encoding: .utf8) {
-                        await MainActor.run {
-                            GlobalConsoleManager.shared.appendOutput(text, source: CurrentPage.homebrew.title)
-                        }
-                    }
-                }
-
-                // Read error output
-                errorData = errorHandle.readDataToEndOfFile()
-
-                continuation.resume(returning: (outputData, errorData))
+        do {
+            try process.run()
+        } catch {
+            await MainActor.run {
+                objectWillChange.send()
+                isOperationRunning = false
+                runningProcess = nil
             }
+            throw error
         }
 
+        // Drain stdout and stderr concurrently. Reading stderr only after stdout
+        // reaches EOF can deadlock when a failing command fills the stderr pipe.
+        let outputTask = Task.detached { () -> Data in
+            var outputData = Data()
+            let outputHandle = outputPipe.fileHandleForReading
+            while true {
+                let chunk = outputHandle.availableData
+                if chunk.isEmpty { break }
+                outputData.append(chunk)
+
+                if let text = String(data: chunk, encoding: .utf8) {
+                    await MainActor.run {
+                        GlobalConsoleManager.shared.appendOutput(text, source: CurrentPage.homebrew.title)
+                    }
+                }
+            }
+            return outputData
+        }
+        let errorTask = Task.detached {
+            errorPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+
+        let outputData = await outputTask.value
+        let errorData = await errorTask.value
+
         process.waitUntilExit()
+        let terminationStatus = process.terminationStatus
 
         // Clear running state - explicitly trigger SwiftUI update
         await MainActor.run {
@@ -378,6 +383,13 @@ class HomebrewController: ObservableObject {
 
         let output = String(data: outputData, encoding: .utf8) ?? ""
         let error = String(data: errorData, encoding: .utf8) ?? ""
+
+        guard terminationStatus == 0 else {
+            let message = error.isEmpty ? output : error
+            throw HomebrewError.commandFailed(
+                message.isEmpty ? "Homebrew exited with status \(terminationStatus)" : message
+            )
+        }
 
         return (output, error)
     }
@@ -1168,10 +1180,14 @@ class HomebrewController: ObservableObject {
         }
     }
 
-    func upgradePackage(name: String) async throws {
+    func upgradePackage(name: String, isCask: Bool? = nil) async throws {
         logger.log(.homebrew, "⬆️ Upgrading package: \(name)")
 
-        let arguments = ["upgrade", name]
+        var arguments = ["upgrade"]
+        if let isCask {
+            arguments.append(isCask ? "--cask" : "--formula")
+        }
+        arguments.append(name)
 
         do {
             let result = try await runBrewCommand(arguments)
@@ -1206,10 +1222,20 @@ class HomebrewController: ObservableObject {
         let isCask: Bool
     }
 
+    struct HomebrewOutdatedCheckResult {
+        let outdated: [HomebrewOutdatedPackage]
+        let checkedPackageNames: Set<String>
+        let failedPackageNames: Set<String>
+    }
+
+    func getOutdatedPackagesHybrid(formulae: [InstalledPackage], casks: [InstalledPackage]) async -> [HomebrewOutdatedPackage] {
+        await getOutdatedPackagesHybridResult(formulae: formulae, casks: casks).outdated
+    }
+
     /// Get outdated packages using hybrid approach: API for core packages, .rb file reading for tap packages
     /// Much faster than `brew outdated` (~3.5x speedup) for core packages, accurate for tap packages
     /// Returns only packages that have updates available
-    func getOutdatedPackagesHybrid(formulae: [InstalledPackage], casks: [InstalledPackage]) async -> [HomebrewOutdatedPackage] {
+    func getOutdatedPackagesHybridResult(formulae: [InstalledPackage], casks: [InstalledPackage]) async -> HomebrewOutdatedCheckResult {
         let allPackages = formulae + casks
         logger.log(.homebrew, "Starting Homebrew update check for \(allPackages.count) packages (\(formulae.count) formulae, \(casks.count) casks)")
 
@@ -1223,7 +1249,7 @@ class HomebrewController: ObservableObject {
         await MainActor.run {
             GlobalConsoleManager.shared.appendOutput("Checking packages via API...\n", source: CurrentPage.homebrew.title)
         }
-        let (coreOutdated, apiFailedPackages) = await checkCorePackagesViaAPI(allPackages)
+        let (coreOutdated, apiFailedPackages, apiCheckedNames) = await checkCorePackagesViaAPI(allPackages)
 
         logger.log(.homebrew, "  API check complete: \(coreOutdated.count) outdated, \(apiFailedPackages.count) API failures (likely tap packages)")
 
@@ -1234,10 +1260,10 @@ class HomebrewController: ObservableObject {
             await MainActor.run {
                 GlobalConsoleManager.shared.appendOutput("Checking \(apiFailedPackages.count) tap packages...\n", source: CurrentPage.homebrew.title)
             }
-            let tapOutdated = await checkTapPackagesManually(apiFailedPackages)
-            logger.log(.homebrew, "  Manual tap check complete: \(tapOutdated.count) outdated")
+            let tapResult = await checkTapPackagesManually(apiFailedPackages)
+            logger.log(.homebrew, "  Manual tap check complete: \(tapResult.outdated.count) outdated")
 
-            let totalOutdated = coreOutdated.count + tapOutdated.count
+            let totalOutdated = coreOutdated.count + tapResult.outdated.count
             logger.log(.homebrew, "Found \(totalOutdated) Homebrew updates available")
 
             await MainActor.run {
@@ -1245,8 +1271,14 @@ class HomebrewController: ObservableObject {
             }
 
             // Filter out Pearcleaner (has dedicated UI banner in Updater view)
-            let allOutdated = coreOutdated + tapOutdated
-            return allOutdated.filter { $0.name != "pearcleaner" }
+            let allOutdated = (coreOutdated + tapResult.outdated).filter { $0.name != "pearcleaner" }
+            let checkedNames = apiCheckedNames.union(tapResult.checkedPackageNames)
+            let allNames = Set(allPackages.map(\.name))
+            return HomebrewOutdatedCheckResult(
+                outdated: allOutdated,
+                checkedPackageNames: checkedNames,
+                failedPackageNames: allNames.subtracting(checkedNames)
+            )
         }
 
         logger.log(.homebrew, "Found \(coreOutdated.count) Homebrew updates available")
@@ -1256,12 +1288,18 @@ class HomebrewController: ObservableObject {
         }
 
         // Filter out Pearcleaner (has dedicated UI banner in Updater view)
-        return coreOutdated.filter { $0.name != "pearcleaner" }
+        let filtered = coreOutdated.filter { $0.name != "pearcleaner" }
+        let allNames = Set(allPackages.map(\.name))
+        return HomebrewOutdatedCheckResult(
+            outdated: filtered,
+            checkedPackageNames: apiCheckedNames,
+            failedPackageNames: allNames.subtracting(apiCheckedNames)
+        )
     }
 
     /// Check core Homebrew packages using public API (fast)
     /// Returns tuple: (outdatedPackages, apiFailedPackages)
-    private func checkCorePackagesViaAPI(_ packages: [InstalledPackage]) async -> (outdated: [HomebrewOutdatedPackage], apiFailed: [InstalledPackage]) {
+    private func checkCorePackagesViaAPI(_ packages: [InstalledPackage]) async -> (outdated: [HomebrewOutdatedPackage], apiFailed: [InstalledPackage], checkedNames: Set<String>) {
         // Fetch latest versions from API using parallel requests
         let latestVersions = await withTaskGroup(of: (String, String?, String?, Int?, Bool).self, returning: [String: (String, String?, Int?, Bool)].self) { group in
             for package in packages {
@@ -1339,6 +1377,7 @@ class HomebrewController: ObservableObject {
         // Track packages that failed API lookup and build outdated list
         var apiFailedPackages: [InstalledPackage] = []
         var outdatedPackages: [HomebrewOutdatedPackage] = []
+        var checkedNames: Set<String> = []
 
         // Compare installed vs latest and build outdated package list
         for package in packages {
@@ -1383,6 +1422,7 @@ class HomebrewController: ObservableObject {
 
             if let (latestVersion, apiBundleVersion, _, _) = latestVersions[package.name] {
                 // API call succeeded - package exists in public API
+                checkedNames.insert(package.name)
 
                 // Determine if update is available
                 var isOutdated = false
@@ -1445,13 +1485,18 @@ class HomebrewController: ObservableObject {
             }
         }
 
-        return (outdatedPackages, apiFailedPackages)
+        return (outdatedPackages, apiFailedPackages, checkedNames)
+    }
+
+    private struct TapPackageCheckResult {
+        var outdated: [HomebrewOutdatedPackage] = []
+        var checkedPackageNames: Set<String> = []
     }
 
     /// Check tap packages by reading their .rb files directly (accurate, like Homebrew does)
     /// Lazy-loads tap info from INSTALL_RECEIPT.json on-demand
-    private func checkTapPackagesManually(_ packages: [InstalledPackage]) async -> [HomebrewOutdatedPackage] {
-        var outdatedPackages: [HomebrewOutdatedPackage] = []
+    private func checkTapPackagesManually(_ packages: [InstalledPackage]) async -> TapPackageCheckResult {
+        var result = TapPackageCheckResult()
 
         for package in packages {
             logger.log(.homebrew, "  Checking tap package: \(package.name)")
@@ -1539,6 +1584,7 @@ class HomebrewController: ObservableObject {
             // Compare using PkgVersion for revision-aware comparison (formulae and casks in taps)
             let installed = PkgVersion(installedVersion)
             let available = PkgVersion(availableVersion)
+            result.checkedPackageNames.insert(package.name)
 
             logger.log(.homebrew, "    Comparing: \(installedVersion) vs \(availableVersion)")
 
@@ -1549,7 +1595,7 @@ class HomebrewController: ObservableObject {
             }
 
             logger.log(.homebrew, "    📦 UPDATE AVAILABLE: \(installedVersion) → \(availableVersion)")
-            outdatedPackages.append(HomebrewOutdatedPackage(
+            result.outdated.append(HomebrewOutdatedPackage(
                 name: package.name,
                 installedVersion: installedVersion,
                 availableVersion: availableVersion,
@@ -1558,7 +1604,7 @@ class HomebrewController: ObservableObject {
             ))
         }
 
-        return outdatedPackages
+        return result
     }
 
     // MARK: - Tap Management

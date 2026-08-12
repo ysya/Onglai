@@ -193,7 +193,7 @@ class HomebrewManager: ObservableObject {
                     updateInstalledCategories()
 
                     // Print debug log report if debug logging is enabled
-                    if UserDefaults.standard.object(forKey: "settings.updater.debugLogging") as? Bool ?? true {
+                    if UserDefaults.standard.object(forKey: "settings.updater.debugLogging") as? Bool ?? false {
                         printOS("\n" + UpdaterDebugLogger.shared.generateDebugReport())
                     }
                 }

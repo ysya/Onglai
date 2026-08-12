@@ -23,8 +23,8 @@ class AppStoreUpdateChecker {
         return app.wrapped
     }
 
-    static func checkForUpdates(apps: [AppInfo]) async -> [UpdateableApp] {
-        guard !apps.isEmpty else { return [] }
+    static func checkForUpdates(apps: [AppInfo]) async -> UpdateCheckResults {
+        guard !apps.isEmpty else { return UpdateCheckResults() }
 
         logger.log(.appStore, "Starting App Store update check for \(apps.count) apps")
         await GlobalConsoleManager.shared.appendOutput("Checking for App Store updates (\(apps.count) apps)...\n", source: CurrentPage.updater.title)
@@ -32,53 +32,52 @@ class AppStoreUpdateChecker {
         // Create optimal chunks based on CPU cores (smaller chunks for App Store API calls)
         let chunks = createOptimalChunks(from: apps, minChunkSize: 3, maxChunkSize: 10)
 
-        // Process chunks concurrently using TaskGroup
-        return await withTaskGroup(of: [UpdateableApp].self) { group in
-            for chunk in chunks {
-                group.addTask {
-                    await checkChunk(chunk: chunk)
-                }
-            }
-
-            // Collect results from all chunks
-            var allUpdates: [UpdateableApp] = []
-            for await chunkUpdates in group {
-                // Check for cancellation between chunks
-                if Task.isCancelled {
-                    break
-                }
-                allUpdates.append(contentsOf: chunkUpdates)
-            }
-
-            logger.log(.appStore, "Found \(allUpdates.count) available App Store updates")
-            await GlobalConsoleManager.shared.appendOutput("Found \(allUpdates.count) App Store update(s)\n", source: CurrentPage.updater.title)
-            return allUpdates
+        // Process one bounded chunk at a time. The previous nested task groups
+        // launched every chunk concurrently, so the "chunking" did not limit
+        // network concurrency at all.
+        var results = UpdateCheckResults()
+        for chunk in chunks {
+            guard !Task.isCancelled else { break }
+            results.merge(await checkChunk(chunk: chunk))
         }
+
+        logger.log(.appStore, "Found \(results.updates.count) available App Store updates")
+        await GlobalConsoleManager.shared.appendOutput("Found \(results.updates.count) App Store update(s)\n", source: CurrentPage.updater.title)
+        return results
     }
 
     /// Check a chunk of apps for updates concurrently
-    private static func checkChunk(chunk: [AppInfo]) async -> [UpdateableApp] {
-        await withTaskGroup(of: UpdateableApp?.self) { group in
+    private static func checkChunk(chunk: [AppInfo]) async -> UpdateCheckResults {
+        await withTaskGroup(of: SingleAppCheckResult.self) { group in
             for app in chunk {
                 group.addTask {
                     await checkSingleApp(app: app)
                 }
             }
 
-            // Collect non-nil results
-            var updates: [UpdateableApp] = []
-            for await update in group {
-                if let update = update {
-                    updates.append(update)
+            var results = UpdateCheckResults()
+            for await result in group {
+                switch result {
+                case .update(let update):
+                    results.updates.append(update)
+                case .current(let path):
+                    results.currentAppPaths.insert(path)
+                case .failed(let failure):
+                    results.failures.append(failure)
                 }
             }
-
-            return updates
+            return results
         }
     }
 
+    private enum SingleAppCheckResult: @unchecked Sendable {
+        case update(UpdateableApp)
+        case current(URL)
+        case failed(UpdateCheckFailure)
+    }
+
     /// Check a single app for updates
-    private static func checkSingleApp(app: AppInfo) async -> UpdateableApp? {
+    private static func checkSingleApp(app: AppInfo) async -> SingleAppCheckResult {
         logger.log(.appStore, "Checking: \(app.appName) (\(app.bundleIdentifier))")
 
         // OPTIMIZATION: Try direct adamID lookup first if available (much faster than bundleID search)
@@ -108,7 +107,11 @@ class AppStoreUpdateChecker {
 
         guard let (appStoreInfo, foundRegion) = result else {
             logger.log(.appStore, "  ❌ API lookup failed - not found in App Store")
-            return nil
+            return .failed(UpdateCheckFailure(
+                appPath: app.path,
+                appName: app.appName,
+                message: "App Store lookup failed or the app is unavailable in the checked storefronts"
+            ))
         }
 
         logger.log(.appStore, "  ✅ Found in App Store: v\(appStoreInfo.version) (adamID: \(appStoreInfo.adamID)) in region: \(foundRegion)")
@@ -120,7 +123,11 @@ class AppStoreUpdateChecker {
         // Skip if versions are empty/invalid
         guard !installedVer.isEmpty && !availableVer.isEmpty else {
             logger.log(.appStore, "  ⚠️ Skipped - empty/invalid version (Installed: \(app.appVersion), Available: \(appStoreInfo.version))")
-            return nil
+            return .failed(UpdateCheckFailure(
+                appPath: app.path,
+                appName: app.appName,
+                message: "App Store returned an invalid version"
+            ))
         }
 
         logger.log(.appStore, "  Comparing versions - Installed: \(app.appVersion), Available: \(appStoreInfo.version)")
@@ -131,7 +138,7 @@ class AppStoreUpdateChecker {
         // Only add if App Store version is GREATER than installed version
         if availableVer > installedVer {
             logger.log(.appStore, "  📦 UPDATE AVAILABLE: \(app.appVersion) → \(appStoreInfo.version)\(isIOSApp ? " (iOS app)" : "")")
-            return UpdateableApp(
+            return .update(UpdateableApp(
                 appInfo: app,
                 availableVersion: appStoreInfo.version,
                 availableBuildNumber: nil,  // App Store doesn't provide separate build numbers
@@ -140,7 +147,9 @@ class AppStoreUpdateChecker {
                 appStoreURL: appStoreInfo.appStoreURL,
                 status: .idle,
                 progress: 0.0,
-                isSelectedForUpdate: true,
+                // App Store updates are handed off to the native App Store and
+                // must not be launched as part of Update All.
+                isSelectedForUpdate: false,
                 releaseTitle: nil,
                 releaseDescription: appStoreInfo.releaseNotes,
                 releaseNotesLink: nil,
@@ -150,11 +159,11 @@ class AppStoreUpdateChecker {
                 foundInRegion: foundRegion,
                 fetchedReleaseNotes: nil,  // App Store has inline release notes
                 appcastItem: nil  // App Store doesn't use Sparkle
-            )
+            ))
         }
 
         logger.log(.appStore, "  ✓ Up to date")
-        return nil
+        return .current(app.path)
     }
 
     private struct AppStoreInfo {

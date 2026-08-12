@@ -22,7 +22,7 @@ class UpdaterDebugLogger: ObservableObject {
 
     /// Check if debug logging is currently enabled (reads directly from UserDefaults)
     private var isDebugEnabled: Bool {
-        UserDefaults.standard.object(forKey: "settings.updater.debugLogging") as? Bool ?? true
+        UserDefaults.standard.object(forKey: "settings.updater.debugLogging") as? Bool ?? false
     }
 
     /// Log a message for a specific update source

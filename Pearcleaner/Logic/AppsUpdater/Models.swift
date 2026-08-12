@@ -60,6 +60,27 @@ enum UpdateStatus: Equatable {
     }
 }
 
+/// A source check must distinguish a confirmed current app from one that could
+/// not be checked. Treating both as "no update" makes network and feed errors
+/// look like a successful, up-to-date result.
+struct UpdateCheckFailure: Sendable {
+    let appPath: URL
+    let appName: String
+    let message: String
+}
+
+struct UpdateCheckResults {
+    var updates: [UpdateableApp] = []
+    var currentAppPaths: Set<URL> = []
+    var failures: [UpdateCheckFailure] = []
+
+    mutating func merge(_ other: UpdateCheckResults) {
+        updates.append(contentsOf: other.updates)
+        currentAppPaths.formUnion(other.currentAppPaths)
+        failures.append(contentsOf: other.failures)
+    }
+}
+
 struct UpdateableApp: Identifiable, Hashable {
     let id = UUID()
     let appInfo: AppInfo
@@ -86,7 +107,7 @@ struct UpdateableApp: Identifiable, Hashable {
     let appcastItem: SUAppcastItem?
 
     var canUpdate: Bool {
-        source == .homebrew || source == .appStore
+        source == .homebrew || source == .sparkle
     }
 
     /// Unique identifier for tracking hidden apps

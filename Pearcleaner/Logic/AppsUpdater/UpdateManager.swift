@@ -19,16 +19,22 @@ class UpdateManager: ObservableObject {
     @Published var lastScanDate: Date?
     @Published var scanningSources: Set<UpdateSource> = []
     @Published var currentScanTask: Task<Void, Never>?
+    @Published private(set) var scanFailuresBySource: [UpdateSource: [UpdateCheckFailure]] = [:]
+
+    /// Paths that each source explicitly confirmed as current. Absence from an
+    /// update list is not enough because it may also mean the check failed.
+    private var currentAppPathsBySource: [UpdateSource: Set<URL>] = [:]
 
     // Batch update tracking
     @Published var isUpdatingAll: Bool = false
     @Published var totalAppsToUpdate: Int = 0
+    @Published private(set) var completedAppsInBatch: Int = 0
 
     // Consolidated settings (2 Data properties total)
     @AppStorage("settings.updater.sources") private var sourcesData: Data = UpdaterSourcesSettings.defaultEncoded()
     @AppStorage("settings.updater.display") private var displayData: Data = UpdaterDisplaySettings.defaultEncoded()
 
-    @AppStorage("settings.updater.debugLogging") private var debugLogging: Bool = true
+    @AppStorage("settings.updater.debugLogging") private var debugLogging: Bool = false
     @AppStorage("settings.updater.hiddenAppsData") private var hiddenAppsData: Data = Data()
     @AppStorage("settings.updater.ignoredAppsData") private var ignoredAppsData: Data = Data()
 
@@ -124,7 +130,7 @@ class UpdateManager: ObservableObject {
         guard !hasAutoScannedOnce else { return }
         hasAutoScannedOnce = true
 
-        Task { @MainActor in
+        currentScanTask = Task { @MainActor in
             await scanIfNeeded()
         }
     }
@@ -162,25 +168,12 @@ class UpdateManager: ObservableObject {
     /// Progress of batch update (0.0 to 1.0)
     var updateAllProgress: Double {
         guard totalAppsToUpdate > 0 else { return 0 }
-        let remaining = updatesBySource
-            .filter { $0.key != .unsupported && $0.key != .current }
-            .values
-            .flatMap { $0 }
-            .filter { $0.isSelectedForUpdate }
-            .count
-        return Double(totalAppsToUpdate - remaining) / Double(totalAppsToUpdate)
+        return Double(completedAppsInBatch) / Double(totalAppsToUpdate)
     }
 
     /// Number of completed apps in batch update
     var completedAppsCount: Int {
-        guard totalAppsToUpdate > 0 else { return 0 }
-        let remaining = updatesBySource
-            .filter { $0.key != .unsupported && $0.key != .current }
-            .values
-            .flatMap { $0 }
-            .filter { $0.isSelectedForUpdate }
-            .count
-        return totalAppsToUpdate - remaining
+        completedAppsInBatch
     }
 
     /// Computed property for easy access to hidden apps mapping (bundleID -> source)
@@ -298,18 +291,18 @@ class UpdateManager: ObservableObject {
                 includeFormulae: false,
                 showAutoUpdatesInHomebrew: showAutoUpdatesInHomebrew
             )
-            return results.first
+            return results.updates.first
 
         case .appStore:
             let results = await AppStoreUpdateChecker.checkForUpdates(apps: [freshAppInfo])
-            return results.first
+            return results.updates.first
 
         case .sparkle:
             let results = await SparkleUpdateChecker.checkForUpdates(
                 apps: [freshAppInfo],
                 includePreReleases: includeSparklePreReleases
             )
-            return results.first
+            return results.updates.first
 
         case .unsupported:
             return nil // Can't check unsupported apps
@@ -368,6 +361,7 @@ class UpdateManager: ObservableObject {
         defer {
             isScanning = false
             scanningSources.removeAll()  // Always clear scanning state on exit
+            currentScanTask = nil
         }
 
         // Determine which sources to scan
@@ -379,6 +373,8 @@ class UpdateManager: ObservableObject {
             // Only clear specified sources from updatesBySource (preserve others)
             for source in sources {
                 updatesBySource[source] = nil
+                currentAppPathsBySource[source] = nil
+                scanFailuresBySource[source] = nil
             }
             // Don't clear hiddenUpdates - will be rebuilt at end
         } else {
@@ -391,6 +387,8 @@ class UpdateManager: ObservableObject {
             // Clear all results
             updatesBySource = [:]
             hiddenUpdates = []  // Clear to prevent stale entries (will be rebuilt from persistent storage)
+            currentAppPathsBySource = [:]
+            scanFailuresBySource = [:]
         }
 
         scanningSources = sourcesToScan
@@ -416,16 +414,11 @@ class UpdateManager: ObservableObject {
         // Use apps from AppState (either freshly loaded or existing)
         let apps = AppState.shared.sortedApps
 
-        // Filter out ignored apps BEFORE checking for updates
-        // This prevents wasting time on HEAD requests and SPUUpdater calls for ignored apps
-        let ignoredAppIds = Set(ignoredApps.keys)
-        let visibleApps = apps.filter { !ignoredAppIds.contains($0.bundleIdentifier) }
-
         // Launch concurrent scans with progressive updates
-        await withTaskGroup(of: (UpdateSource, [UpdateableApp]).self) { group in
+        await withTaskGroup(of: (UpdateSource, UpdateCheckResults).self) { group in
             if sourcesToScan.contains(.homebrew) {
                 group.addTask {
-                    let results = await HomebrewUpdateChecker.checkForUpdates(apps: visibleApps, includeFormulae: false, showAutoUpdatesInHomebrew: self.showAutoUpdatesInHomebrew)
+                    let results = await HomebrewUpdateChecker.checkForUpdates(apps: apps, includeFormulae: false, showAutoUpdatesInHomebrew: self.showAutoUpdatesInHomebrew)
                     return (.homebrew, results)
                 }
             }
@@ -433,7 +426,7 @@ class UpdateManager: ObservableObject {
             if sourcesToScan.contains(.appStore) {
                 group.addTask {
                     // Use pre-categorized flag (instant check vs expensive receipt verification)
-                    let appStoreApps = visibleApps.filter { $0.isAppStore }
+                    let appStoreApps = apps.filter { $0.isAppStore }
                     let results = await AppStoreUpdateChecker.checkForUpdates(apps: appStoreApps)
                     return (.appStore, results)
                 }
@@ -444,7 +437,7 @@ class UpdateManager: ObservableObject {
                     // Show all apps with Sparkle, regardless of other update sources
                     // This allows users to see version differences across App Store/Homebrew/Sparkle
                     // and choose which source to update from
-                    let sparkleApps = visibleApps.filter { $0.hasSparkle }
+                    let sparkleApps = apps.filter { $0.hasSparkle }
 
                     let results = await SparkleUpdateChecker.checkForUpdates(apps: sparkleApps, includePreReleases: self.includeSparklePreReleases)
                     return (.sparkle, results)
@@ -452,16 +445,14 @@ class UpdateManager: ObservableObject {
             }
 
             // Process results as they complete
-            for await (source, apps) in group {
+            for await (source, results) in group {
                 // Check for cancellation between source results
                 if Task.isCancelled {
-                    // Still process results with empty arrays to trigger cleanup
-                    for source in scanningSources {
-                        await processSourceResults(source: source, apps: [])
-                    }
                     break
                 }
-                await processSourceResults(source: source, apps: apps)
+                currentAppPathsBySource[source] = results.currentAppPaths
+                scanFailuresBySource[source] = results.failures
+                await processSourceResults(source: source, apps: results.updates)
             }
         }
 
@@ -532,8 +523,9 @@ class UpdateManager: ObservableObject {
         let currentApps = apps.filter { app in
             // Not a web app
             !app.webApp &&
-            // Must be supported (App Store, Homebrew, or Sparkle)
-            (app.isAppStore || app.cask != nil || app.hasSparkle) &&
+            // Every enabled source applicable to this app must explicitly
+            // confirm it is current. A missing result may represent an error.
+            isConfirmedCurrent(app) &&
             // But doesn't have an update available in any of the update sources
             !updatesBySource.values.flatMap { $0 }.contains(where: { $0.appInfo.path == app.path })
         }.map { app in
@@ -568,14 +560,40 @@ class UpdateManager: ObservableObject {
 
         lastScanDate = Date()
 
+        let failureCount = scanFailuresBySource.values.reduce(0) { $0 + $1.count }
+        if failureCount > 0 {
+            GlobalConsoleManager.shared.appendOutput(
+                "⚠ Could not verify updates for \(failureCount) app(s); they were not marked as current\n",
+                source: CurrentPage.updater.title
+            )
+        }
+
         // Print formatted debug report to console after scan completes
         if debugLogging {
             printOS("\n" + UpdaterDebugLogger.shared.generateDebugReport())
         }
 
-        // Clear task reference on completion
-        currentScanTask = nil
+    }
 
+    private func isConfirmedCurrent(_ app: AppInfo) -> Bool {
+        var applicableSources: [UpdateSource] = []
+
+        if checkAppStore, app.isAppStore {
+            applicableSources.append(.appStore)
+        }
+        if checkHomebrew,
+           app.cask != nil,
+           !(app.autoUpdates == true && !showAutoUpdatesInHomebrew) {
+            applicableSources.append(.homebrew)
+        }
+        if checkSparkle, app.hasSparkle {
+            applicableSources.append(.sparkle)
+        }
+
+        guard !applicableSources.isEmpty else { return false }
+        return applicableSources.allSatisfy {
+            currentAppPathsBySource[$0]?.contains(app.path) == true
+        }
     }
 
     /// Rebuild hidden apps list from storage for display in sidebar
@@ -675,10 +693,7 @@ class UpdateManager: ObservableObject {
 
     /// Cancel the current scan operation
     func cancelScan() {
-        isScanning = false  // Immediately update UI state
         currentScanTask?.cancel()
-        currentScanTask = nil
-        scanningSources.removeAll()  // Clear scanning state for all sources
     }
 
     /// Remove pre-release apps from a specific source without rescanning
@@ -708,7 +723,7 @@ class UpdateManager: ObservableObject {
 
                 // Perform upgrade
                 do {
-                    try await HomebrewController.shared.upgradePackage(name: cask)
+                    try await HomebrewController.shared.upgradePackage(name: cask, isCask: true)
 
                     GlobalConsoleManager.shared.appendOutput("✓ Successfully updated \(app.appInfo.appName) to version \(app.availableVersion ?? "unknown")\n", source: CurrentPage.updater.title)
 
@@ -732,67 +747,13 @@ class UpdateManager: ObservableObject {
             }
 
         case .appStore:
-            if let adamID = app.adamID {
-                GlobalConsoleManager.shared.appendOutput("Starting App Store update for \(app.appInfo.appName) (adamID: \(adamID))...\n", source: CurrentPage.updater.title)
-
-                // Update the app status
-                if var apps = updatesBySource[.appStore],
-                   let index = apps.firstIndex(where: { $0.id == app.id }) {
-                    apps[index].status = .downloading
-                    updatesBySource[.appStore] = apps
-                }
-
-                // Perform update (new API throws errors)
-                do {
-                    try await AppStoreUpdater.shared.updateApp(adamID: adamID, appPath: app.appInfo.path, isIOSApp: app.isIOSApp) { [weak self] progress, status in
-                        Task { @MainActor in
-                            guard let self = self else { return }
-                            if var apps = self.updatesBySource[.appStore],
-                               let index = apps.firstIndex(where: { $0.id == app.id }) {
-                                apps[index].progress = progress
-
-                                // Update status based on App Store phase
-                                if status.contains("Downloading") || status.contains("Preparing") {
-                                    // Phase 0 or 4: Downloading or preparing
-                                    apps[index].status = .downloading
-                                    self.updatesBySource[.appStore] = apps
-                                } else if status.contains("Installing") {
-                                    // Phase 1: Installing
-                                    apps[index].status = .installing
-                                    self.updatesBySource[.appStore] = apps
-                                } else if status.contains("Completed") || status.contains("Already up to date") {
-                                    // Phase 5 or no download needed: Complete - remove from list and refresh
-                                    Task {
-                                        await self.removeFromUpdatesList(appID: app.id, source: .appStore)
-                                        await self.refreshApps(updatedApp: app.appInfo)
-                                    }
-                                } else {
-                                    // Other phases: Keep updating progress but maintain current status
-                                    self.updatesBySource[.appStore] = apps
-                                }
-                            }
-                        }
-                    }
-
-                    // Update succeeded - refresh happens via completion callback above
-                    UpdaterDebugLogger.shared.log(.appStore, "✅ App Store update completed for adamID \(adamID)")
-                    GlobalConsoleManager.shared.appendOutput("✓ Successfully updated \(app.appInfo.appName) from App Store\n", source: CurrentPage.updater.title)
-
-                } catch {
-                    // Handle errors from the new throwing API
-                    let message = error.localizedDescription
-                    printOS("❌ App Store update failed for adamID \(adamID): \(message)")
-                    GlobalConsoleManager.shared.appendOutput("✗ Failed to update \(app.appInfo.appName) from App Store: \(message)\n", source: CurrentPage.updater.title)
-
-                    // Update UI to show error (matching Sparkle's error display pattern)
-                    if var apps = updatesBySource[.appStore],
-                       let index = apps.firstIndex(where: { $0.id == app.id }) {
-                        apps[index].status = .failed(message)
-                        apps[index].progress = 0.0
-                        updatesBySource[.appStore] = apps
-                    }
-                }
+            guard let url = appStoreURL(for: app), NSWorkspace.shared.open(url) else {
+                let message = "Could not open this app in the App Store"
+                updateStatus(for: app, status: .failed(message), progress: 0)
+                GlobalConsoleManager.shared.appendOutput("✗ \(message): \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
+                return
             }
+            GlobalConsoleManager.shared.appendOutput("Opened \(app.appInfo.appName) in the App Store. Install the update there.\n", source: CurrentPage.updater.title)
 
         case .sparkle:
             // Use Sparkle's updater via UpdateQueue to prevent concurrent update conflicts
@@ -816,38 +777,41 @@ class UpdateManager: ObservableObject {
             // Set initial downloading status
             updateStatus(for: app, status: .downloading, progress: 0.0)
 
-            // Create Sparkle update operation (blocks until completion)
-            let operation = SparkleUpdateOperation(
-                app: app,
-                includePreReleases: self.includeSparklePreReleases,
-                progressCallback: { [weak self] progress, status in
-                    guard let self = self else { return }
-                    Task { @MainActor in
-                        self.updateStatus(for: app, status: status, progress: progress)
-                    }
-                },
-                completionCallback: { [weak self] success, error in
-                    guard let self = self else { return }
-                    Task { @MainActor in
-                        if success {
-                            UpdaterDebugLogger.shared.log(.sparkle, "═══ Update completed successfully for \(app.appInfo.appName)")
-                            GlobalConsoleManager.shared.appendOutput("✓ Successfully updated \(app.appInfo.appName) via Sparkle\n", source: CurrentPage.updater.title)
-                            // Update completed - remove from list and refresh (only flush updated app's bundle)
-                            await self.removeFromUpdatesList(appID: app.id, source: .sparkle)
-                            await self.refreshApps(updatedApp: app.appInfo)
-                        } else {
-                            // Update failed - show error
-                            let message = error?.localizedDescription ?? "Unknown error"
-                            UpdaterDebugLogger.shared.log(.sparkle, "═══ Update failed for \(app.appInfo.appName): \(message)")
-                            GlobalConsoleManager.shared.appendOutput("✗ Failed to update \(app.appInfo.appName) via Sparkle: \(message)\n", source: CurrentPage.updater.title)
-                            self.updateStatus(for: app, status: .failed(message), progress: 0.0)
+            // Wait for the queued operation to finish so batch updates and their
+            // progress do not report completion while Sparkle is still running.
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let operation = SparkleUpdateOperation(
+                    app: app,
+                    includePreReleases: self.includeSparklePreReleases,
+                    progressCallback: { [weak self] progress, status in
+                        guard let self = self else { return }
+                        Task { @MainActor in
+                            self.updateStatus(for: app, status: status, progress: progress)
+                        }
+                    },
+                    completionCallback: { [weak self] success, error in
+                        Task { @MainActor in
+                            guard let self = self else {
+                                continuation.resume()
+                                return
+                            }
+                            if success {
+                                UpdaterDebugLogger.shared.log(.sparkle, "═══ Update completed successfully for \(app.appInfo.appName)")
+                                GlobalConsoleManager.shared.appendOutput("✓ Successfully updated \(app.appInfo.appName) via Sparkle\n", source: CurrentPage.updater.title)
+                                await self.removeFromUpdatesList(appID: app.id, source: .sparkle)
+                                await self.refreshApps(updatedApp: app.appInfo)
+                            } else {
+                                let message = error?.localizedDescription ?? "Unknown error"
+                                UpdaterDebugLogger.shared.log(.sparkle, "═══ Update failed for \(app.appInfo.appName): \(message)")
+                                GlobalConsoleManager.shared.appendOutput("✗ Failed to update \(app.appInfo.appName) via Sparkle: \(message)\n", source: CurrentPage.updater.title)
+                                self.updateStatus(for: app, status: .failed(message), progress: 0.0)
+                            }
+                            continuation.resume()
                         }
                     }
-                }
-            )
-
-            // Add to queue (limits concurrent operations to prevent Sparkle conflicts)
-            UpdateQueue.shared.addOperation(operation)
+                )
+                UpdateQueue.shared.addOperation(operation)
+            }
 
         case .unsupported:
             // Unsupported apps cannot be updated - do nothing
@@ -863,68 +827,8 @@ class UpdateManager: ObservableObject {
 
     /// Update an iOS app from the App Store
     func updateIOSApp(_ app: UpdateableApp) async {
-        guard app.isIOSApp, let adamID = app.adamID else {
-            printOS("❌ Not an iOS app or missing adamID")
-            GlobalConsoleManager.shared.appendOutput("✗ Not an iOS app or missing adamID for \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
-            return
-        }
-
-        GlobalConsoleManager.shared.appendOutput("Starting iOS app update for \(app.appInfo.appName) (adamID: \(adamID))...\n", source: CurrentPage.updater.title)
-
-        // Update status
-        if var apps = updatesBySource[.appStore],
-           let index = apps.firstIndex(where: { $0.id == app.id }) {
-            apps[index].status = .downloading
-            apps[index].progress = 0.0
-            updatesBySource[.appStore] = apps
-        }
-
-        // Call AppStoreUpdater to download (which will trigger our observer)
-        do {
-            try await AppStoreUpdater.shared.updateApp(
-                adamID: adamID,
-                appPath: app.appInfo.path,
-                isIOSApp: true,
-                progress: { [weak self] progress, status in
-                    Task { @MainActor in
-                        guard let self = self else { return }
-                        if var apps = self.updatesBySource[.appStore],
-                           let index = apps.firstIndex(where: { $0.id == app.id }) {
-                            apps[index].progress = progress
-
-                            // Update status based on App Store phase (match real updateApp logic)
-                            if status.contains("Downloading") || status.contains("Preparing") {
-                                // Phase 0 or 4: Downloading or preparing
-                                apps[index].status = .downloading
-                                self.updatesBySource[.appStore] = apps
-                            } else if status.contains("Installing") {
-                                // Phase 1: Installing
-                                apps[index].status = .installing
-                                self.updatesBySource[.appStore] = apps
-                            } else if status.contains("Completed") || status.contains("Already up to date") {
-                                // Phase 5 or no download needed: Complete - remove from list and refresh
-                                Task {
-                                    await self.removeFromUpdatesList(appID: app.id, source: .appStore)
-                                    await self.refreshApps(updatedApp: app.appInfo)
-                                }
-                            } else {
-                                // Other phases: Keep updating progress but maintain current status
-                                self.updatesBySource[.appStore] = apps
-                            }
-                        }
-                    }
-                }
-            )
-            GlobalConsoleManager.shared.appendOutput("✓ Successfully updated iOS app \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
-        } catch {
-            printOS("❌ iOS app update failed: \(error)")
-            GlobalConsoleManager.shared.appendOutput("✗ Failed to update iOS app \(app.appInfo.appName): \(error.localizedDescription)\n", source: CurrentPage.updater.title)
-            if var apps = updatesBySource[.appStore],
-               let index = apps.firstIndex(where: { $0.id == app.id }) {
-                apps[index].status = .failed("Open in App Store to update using the App Store button to the left.")
-                updatesBySource[.appStore] = apps
-            }
-        }
+        guard app.isIOSApp else { return }
+        await updateApp(app)
     }
 
     func updateAll(source: UpdateSource) async {
@@ -944,34 +848,45 @@ class UpdateManager: ObservableObject {
 
     /// Update all selected apps across all sources (concurrent per-source)
     func updateSelectedApps() async {
-        // Count total selected apps across updateable sources only (exclude .current and .unsupported)
-        let totalSelected = updatesBySource
-            .filter { $0.key != .unsupported && $0.key != .current }
+        let candidates = updatesBySource
+            .filter { $0.key == .homebrew || $0.key == .sparkle }
             .values
             .flatMap { $0 }
             .filter { $0.isSelectedForUpdate }
-            .count
-        totalAppsToUpdate = totalSelected
+
+        // The same bundle can be reported by both Homebrew and Sparkle. Never
+        // run two installers against it concurrently; honor Homebrew ownership
+        // when both sources were selected.
+        var selectedByPath: [URL: UpdateableApp] = [:]
+        for app in candidates.sorted(by: { batchPriority($0.source) < batchPriority($1.source) }) {
+            if selectedByPath[app.appInfo.path] == nil {
+                selectedByPath[app.appInfo.path] = app
+            }
+        }
+        let selectedApps = Array(selectedByPath.values)
+
+        totalAppsToUpdate = selectedApps.count
+        completedAppsInBatch = 0
         isUpdatingAll = true
 
         defer {
             isUpdatingAll = false
             totalAppsToUpdate = 0
+            completedAppsInBatch = 0
         }
 
-        GlobalConsoleManager.shared.appendOutput("Starting updates for \(totalSelected) selected app(s) across all sources...\n", source: CurrentPage.updater.title)
+        GlobalConsoleManager.shared.appendOutput("Starting updates for \(selectedApps.count) selected app(s) across all sources...\n", source: CurrentPage.updater.title)
 
         await withTaskGroup(of: Void.self) { group in
             // Process each source's updates concurrently in separate Tasks
-            for source in UpdateSource.allCases {
-                if let apps = updatesBySource[source] {
-                    let selectedApps = apps.filter { $0.isSelectedForUpdate }
-                    if !selectedApps.isEmpty {
-                        group.addTask {
-                            // Within each source, process apps sequentially
-                            for app in selectedApps {
-                                await self.updateApp(app)
-                            }
+            for source in [UpdateSource.homebrew, .sparkle] {
+                let sourceApps = selectedApps.filter { $0.source == source }
+                if !sourceApps.isEmpty {
+                    group.addTask {
+                        // Within each source, process apps sequentially
+                        for app in sourceApps {
+                            await self.updateApp(app)
+                            await self.markBatchItemCompleted()
                         }
                     }
                 }
@@ -979,6 +894,21 @@ class UpdateManager: ObservableObject {
         }
 
         GlobalConsoleManager.shared.appendOutput("All selected updates completed\n", source: CurrentPage.updater.title)
+    }
+
+    private func markBatchItemCompleted() {
+        completedAppsInBatch += 1
+    }
+
+    private func batchPriority(_ source: UpdateSource) -> Int {
+        source == .homebrew ? 0 : 1
+    }
+
+    private func appStoreURL(for app: UpdateableApp) -> URL? {
+        let rawURL = app.appStoreURL ?? app.adamID.map { "https://apps.apple.com/app/id\($0)" }
+        guard let rawURL, var components = URLComponents(string: rawURL) else { return nil }
+        components.scheme = "macappstore"
+        return components.url
     }
 
     /// Update the status and progress of an app in the updates list

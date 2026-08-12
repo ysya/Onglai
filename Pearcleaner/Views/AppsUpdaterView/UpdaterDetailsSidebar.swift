@@ -547,7 +547,7 @@ struct UpdaterHiddenAppRow: View {
 struct UpdaterHiddenSidebarFooter: View {
     @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var updateManager: UpdateManager
-    @AppStorage("settings.updater.debugLogging") private var debugLogging: Bool = true
+    @AppStorage("settings.updater.debugLogging") private var debugLogging: Bool = false
 
     var body: some View {
         HStack {

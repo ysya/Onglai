@@ -412,7 +412,7 @@ struct UpdateDetailView: View {
                 Task { await updateManager.updateApp(app) }
             }
         } label: {
-            Text(app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
+            Text(app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
@@ -486,7 +486,7 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
+                title: app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
                 foregroundColor: .white,
                 backgroundColor: .green,
                 isDisabled: app.status != .idle,

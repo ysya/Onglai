@@ -44,7 +44,9 @@ struct AppsUpdaterView: View {
 
     // Collect all apps across all sources (exclude unsupported and current apps - they can't/don't need updates)
     private var allApps: [UpdateableApp] {
-        updateManager.updatesBySource.values.flatMap { $0 }.filter { $0.source != .unsupported && $0.source != .current }
+        updateManager.updatesBySource.values.flatMap { $0 }.filter {
+            $0.source != .unsupported && $0.source != .current && $0.source != .appStore
+        }
     }
 
     // Count selected apps across all sources
@@ -201,11 +203,15 @@ struct AppsUpdaterView: View {
                         )
                     } else {
                         Label("Update All", systemImage: "arrow.down.circle")
-                            .badge(updateManager.totalUpdateCount)
+                            .badge(allApps.count)
                     }
                 }
-                .help(updateManager.isUpdatingAll ? "Updating apps..." : "Update all available apps")
-                .disabled(allUpdateableApps.isEmpty || !updateManager.scanningSources.isEmpty || updateManager.isUpdatingAll)
+                .help(updateManager.isUpdatingAll
+                      ? "Updating apps..."
+                      : allApps.isEmpty && updateManager.totalUpdateCount > 0
+                        ? "Update in App Store"
+                        : "Update all available apps")
+                .disabled(allApps.isEmpty || !updateManager.scanningSources.isEmpty || updateManager.isUpdatingAll)
 
                 if updateManager.isScanning {
                     // Show stop button during scan
@@ -262,7 +268,7 @@ struct AppsUpdaterView: View {
     private func selectAllApps() {
         // Select all apps across all sources (skip unsupported - they can't be updated)
         for (source, apps) in updateManager.updatesBySource {
-            guard source != .unsupported || source != .current else { continue }
+            guard source != .unsupported, source != .current, source != .appStore else { continue }
             var updatedApps = apps
             for index in updatedApps.indices {
                 updatedApps[index].isSelectedForUpdate = true
@@ -291,4 +297,3 @@ struct AppsUpdaterView: View {
         }
     }
 }
-

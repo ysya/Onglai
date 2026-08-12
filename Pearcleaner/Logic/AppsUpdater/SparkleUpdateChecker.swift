@@ -28,29 +28,43 @@ private enum SparkleUpdateResult {
     case error(Error)
 }
 
+private enum SparkleSingleAppCheckResult: @unchecked Sendable {
+    case update(UpdateableApp)
+    case current(URL)
+    case failed(UpdateCheckFailure)
+}
+
 class SparkleUpdateChecker {
     fileprivate static let logger = UpdaterDebugLogger.shared
 
-    /// Cached current macOS version (computed once per session)
-    private static let currentMacOSVersion: Version = {
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-        let versionString = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
-        return Version(versionNumber: versionString, buildNumber: nil)
-    }()
-
     /// Check for Sparkle updates using SPUUpdater directly
     /// Only checks apps with SUFeedURL in Info.plist (no binary scanning)
-    static func checkForUpdates(apps: [AppInfo], includePreReleases: Bool) async -> [UpdateableApp] {
+    static func checkForUpdates(apps: [AppInfo], includePreReleases: Bool) async -> UpdateCheckResults {
         logger.log(.sparkle, "Starting Sparkle update check for \(apps.count) apps (includePreReleases: \(includePreReleases))")
         await GlobalConsoleManager.shared.appendOutput("Checking for Sparkle updates (\(apps.count) apps)...\n", source: CurrentPage.updater.title)
 
         // Filter apps that have Sparkle feed URLs
         var sparkleApps: [(appInfo: AppInfo, bundle: Bundle, feedURL: URL)] = []
+        var results = UpdateCheckResults()
 
         for appInfo in apps {
-            guard let bundle = Bundle(url: appInfo.path) else { continue }
+            guard let bundle = Bundle(url: appInfo.path) else {
+                results.failures.append(UpdateCheckFailure(
+                    appPath: appInfo.path,
+                    appName: appInfo.appName,
+                    message: "The application bundle could not be opened"
+                ))
+                continue
+            }
 
-            guard let feedURL = Self.feedURL(from: bundle) else { continue }
+            guard let feedURL = Self.feedURL(from: bundle) else {
+                results.failures.append(UpdateCheckFailure(
+                    appPath: appInfo.path,
+                    appName: appInfo.appName,
+                    message: "No valid Sparkle feed URL was found"
+                ))
+                continue
+            }
 
             logger.log(.sparkle, "Checking: \(appInfo.appName) - \(feedURL.absoluteString)")
             sparkleApps.append((appInfo, bundle, feedURL))
@@ -58,13 +72,12 @@ class SparkleUpdateChecker {
 
         guard !sparkleApps.isEmpty else {
             logger.log(.sparkle, "No Sparkle apps with valid feed URLs found")
-            return []
+            return results
         }
 
         // Check apps in batches to prevent system resource exhaustion
         // Batch size adapts to CPU core count (min: 5, max: 50)
         // Lower minimum helps Intel Macs complete scans faster while still being safe
-        var updates: [UpdateableApp] = []
         let batches = createOptimalChunks(from: sparkleApps, minChunkSize: 5, maxChunkSize: 50)
 
         // Process each batch concurrently
@@ -74,33 +87,37 @@ class SparkleUpdateChecker {
                 break
             }
 
-            let batchResults = await withTaskGroup(of: UpdateableApp?.self) { group in
+            let batchResults = await withTaskGroup(of: SparkleSingleAppCheckResult.self) { group in
                 for (appInfo, bundle, feedURL) in batch {
                     group.addTask {
                         await Self.checkSingleApp(appInfo: appInfo, bundle: bundle, feedURL: feedURL, includePreReleases: includePreReleases)
                     }
                 }
 
-                // Collect non-nil results from this batch
-                var batchUpdates: [UpdateableApp] = []
-                for await update in group {
-                    if let update = update {
-                        batchUpdates.append(update)
+                var batchResults = UpdateCheckResults()
+                for await result in group {
+                    switch result {
+                    case .update(let update):
+                        batchResults.updates.append(update)
+                    case .current(let path):
+                        batchResults.currentAppPaths.insert(path)
+                    case .failed(let failure):
+                        batchResults.failures.append(failure)
                     }
                 }
-                return batchUpdates
+                return batchResults
             }
 
-            updates.append(contentsOf: batchResults)
+            results.merge(batchResults)
         }
 
-        logger.log(.sparkle, "Found \(updates.count) Sparkle updates available")
-        await GlobalConsoleManager.shared.appendOutput("Found \(updates.count) Sparkle update(s)\n", source: CurrentPage.updater.title)
-        return updates
+        logger.log(.sparkle, "Found \(results.updates.count) Sparkle updates available")
+        await GlobalConsoleManager.shared.appendOutput("Found \(results.updates.count) Sparkle update(s)\n", source: CurrentPage.updater.title)
+        return results
     }
 
     /// Check a single app for updates using SPUUpdater
-    private static func checkSingleApp(appInfo: AppInfo, bundle: Bundle, feedURL: URL, includePreReleases: Bool) async -> UpdateableApp? {
+    private static func checkSingleApp(appInfo: AppInfo, bundle: Bundle, feedURL: URL, includePreReleases: Bool) async -> SparkleSingleAppCheckResult {
         // Directly proceed with Sparkle check (no pre-flight URL check)
         // Users can hide slow/problematic apps using the eye button to prevent future checks
         let result = await withCheckedContinuation { continuation in
@@ -109,8 +126,7 @@ class SparkleUpdateChecker {
                     appInfo: appInfo,
                     bundle: bundle,
                     feedURL: feedURL,
-                    includePreReleases: includePreReleases,
-                    currentMacOSVersion: Self.currentMacOSVersion
+                    includePreReleases: includePreReleases
                 ) { result in
                     continuation.resume(returning: result)
                 }
@@ -158,21 +174,15 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
     private let bundle: Bundle
     private let feedURL: URL
     private let includePreReleases: Bool
-    private let currentMacOSVersion: Version
-    private let completion: (UpdateableApp?) -> Void
+    private let completion: (SparkleSingleAppCheckResult) -> Void
     private var updater: SPUUpdater?
+    private var hasFinished = false
 
-    // Cache for bestValidUpdate result (Sparkle calls it 3 times during check phase)
-    private var cachedBestUpdate: SUAppcastItem?
-    private var hasCachedResult = false  // Track if we've cached anything (nil or item)
-    private var bestUpdateCallCount = 0
-
-    init(appInfo: AppInfo, bundle: Bundle, feedURL: URL, includePreReleases: Bool, currentMacOSVersion: Version, completion: @escaping (UpdateableApp?) -> Void) {
+    init(appInfo: AppInfo, bundle: Bundle, feedURL: URL, includePreReleases: Bool, completion: @escaping (SparkleSingleAppCheckResult) -> Void) {
         self.appInfo = appInfo
         self.bundle = bundle
         self.feedURL = feedURL
         self.includePreReleases = includePreReleases
-        self.currentMacOSVersion = currentMacOSVersion
         self.completion = completion
         super.init()
     }
@@ -188,20 +198,26 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
 
         // Create SPUUpdater with this operation as both user driver and delegate
         let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: self, delegate: self)
+        self.updater = updater
 
         do {
             try updater.start()
             updater.checkForUpdates()
-            self.updater = updater
         } catch {
             SparkleUpdateChecker.logger.log(.sparkle, "  ❌ Failed to start updater: \(error.localizedDescription)")
-            finish(with: nil)
+            finish(with: .failed(failure(error.localizedDescription)))
         }
     }
 
-    private func finish(with update: UpdateableApp?) {
-        completion(update)
+    private func finish(with result: SparkleSingleAppCheckResult) {
+        guard !hasFinished else { return }
+        hasFinished = true
+        completion(result)
         updater = nil
+    }
+
+    private func failure(_ message: String) -> UpdateCheckFailure {
+        UpdateCheckFailure(appPath: appInfo.path, appName: appInfo.appName, message: message)
     }
 
     private func createUpdate(from appcastItem: SUAppcastItem, includePreReleases: Bool) -> UpdateableApp? {
@@ -209,8 +225,8 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
         let availableVersionString = appcastItem.displayVersionString
         let buildVersionString = appcastItem.versionString
 
-        // Note: Item was already validated by bestValidUpdate delegate method
-        // Only need to filter pre-releases and extract metadata here
+        // Sparkle already selected a compatible item. Only apply the user's
+        // pre-release preference and extract metadata here.
         SparkleUpdateChecker.logger.log(.sparkle, "     Processing validated update: \(availableVersionString) (build: \(buildVersionString))")
 
         // Check if this is a pre-release
@@ -418,7 +434,15 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
                 SparkleUpdateChecker.logger.log(.sparkle, "  ⚠️ Update filtered out by Pearcleaner logic")
             }
 
-            finish(with: update)
+            // This checker only observes Sparkle's selection. Dismiss the
+            // installation prompt without persisting a skipped version.
+            reply?(.dismiss)
+
+            if let update {
+                finish(with: .update(update))
+            } else {
+                finish(with: .failed(failure("Sparkle selected an update that was filtered by the current channel settings")))
+            }
 
         case .noUpdate(let reason, let latestItem):
             // Sparkle says no update - trust it completely!
@@ -433,19 +457,28 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
                 SparkleUpdateChecker.logger.log(.sparkle, "     Latest in feed: (none)")
             }
 
-            finish(with: nil)
+            switch reason {
+            case .onLatestVersion, .onNewerThanLatestVersion:
+                finish(with: .current(appInfo.path))
+            case .systemIsTooOld:
+                finish(with: .failed(failure("The available Sparkle update requires a newer macOS version")))
+            case .systemIsTooNew:
+                finish(with: .failed(failure("The available Sparkle update does not support this macOS version")))
+            default:
+                finish(with: .failed(failure("Sparkle could not determine a compatible update")))
+            }
             acknowledgement?()
 
         case .error(let error):
             SparkleUpdateChecker.logger.log(.sparkle, "  ❌ Sparkle error: \(error.localizedDescription)")
-            finish(with: nil)
+            finish(with: .failed(failure(error.localizedDescription)))
             acknowledgement?()
         }
     }
 
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
         acknowledgement()
-        finish(with: nil)
+        finish(with: .current(appInfo.path))
     }
 
     // MARK: - Ignored SPUUserDriver Methods
@@ -484,130 +517,6 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
         return ["beta", "alpha", "nightly", "rc", "dev"]
     }
 
-    func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
-        bestUpdateCallCount += 1
-
-        // Sparkle calls this 3 times during check phase with slightly different filtered appcasts
-        // Return cached result for calls 2 and 3 to avoid redundant work
-        if hasCachedResult {
-            SparkleUpdateChecker.logger.log(.sparkle, "  🔍 bestValidUpdate called (call #\(bestUpdateCallCount)) - returning cached result")
-            if let cached = cachedBestUpdate {
-                SparkleUpdateChecker.logger.log(.sparkle, "     Cached: \(cached.displayVersionString) (build: \(cached.versionString))")
-            } else {
-                SparkleUpdateChecker.logger.log(.sparkle, "     Cached: nil (no update available)")
-            }
-            return cachedBestUpdate
-        }
-
-        SparkleUpdateChecker.logger.log(.sparkle, "  🔍 bestValidUpdate called (call #\(bestUpdateCallCount)) - finding newest valid version")
-        SparkleUpdateChecker.logger.log(.sparkle, "     Total items in appcast: \(appcast.items.count)")
-
-        // Get installed version info for comparison
-        let installedDisplayVersion = appInfo.appVersion
-        let installedBuild = appInfo.appBuildNumber
-
-        SparkleUpdateChecker.logger.log(.sparkle, "     Installed: \(installedDisplayVersion) (build: \(installedBuild ?? "nil"))")
-
-        // Sort items by display version (newest first) using Version struct
-        let sortedItems = appcast.items.sorted { item1, item2 in
-            let ver1 = Version(versionNumber: item1.displayVersionString, buildNumber: nil)
-            let ver2 = Version(versionNumber: item2.displayVersionString, buildNumber: nil)
-            return ver1 > ver2  // Descending order (newest first)
-        }
-
-        SparkleUpdateChecker.logger.log(.sparkle, "     Sorted items (newest → oldest):")
-        for (index, item) in sortedItems.enumerated() {
-            SparkleUpdateChecker.logger.log(.sparkle, "       \(index + 1). \(item.displayVersionString) (build: \(item.versionString))")
-        }
-
-        // Filter items for OS compatibility and pre-release requirements
-        SparkleUpdateChecker.logger.log(.sparkle, "     ")
-        SparkleUpdateChecker.logger.log(.sparkle, "     Filtering for OS compatibility and pre-release settings...")
-
-        for (index, item) in sortedItems.enumerated() {
-            // Filter 1: Check OS compatibility (using cached OS version)
-            if let minOS = item.minimumSystemVersion {
-                let minOSVersion = Version(versionNumber: minOS, buildNumber: nil)
-
-                if currentMacOSVersion < minOSVersion {
-                    SparkleUpdateChecker.logger.log(.sparkle, "       ❌ Filtered #\(index + 1): Requires macOS \(minOS), current: \(currentMacOSVersion.versionNumber ?? "unknown")")
-                    continue
-                }
-            }
-
-            // Filter 2: Check channel (pre-release toggle)
-            if let channel = item.channel, channel.lowercased() != "release" {
-                if !includePreReleases {
-                    SparkleUpdateChecker.logger.log(.sparkle, "       ❌ Filtered #\(index + 1): Pre-release channel '\(channel)' (toggle off)")
-                    continue
-                } else {
-                    SparkleUpdateChecker.logger.log(.sparkle, "       ℹ️ Item #\(index + 1): Pre-release channel '\(channel)' (allowed)")
-                }
-            }
-
-            // Filter 3: Check if version string indicates pre-release (legacy apps)
-            if isPreReleaseVersion(item.displayVersionString) {
-                if !includePreReleases {
-                    SparkleUpdateChecker.logger.log(.sparkle, "       ❌ Filtered #\(index + 1): Pre-release version name '\(item.displayVersionString)' (toggle off)")
-                    continue
-                } else {
-                    SparkleUpdateChecker.logger.log(.sparkle, "       ℹ️ Item #\(index + 1): Pre-release version name '\(item.displayVersionString)' (allowed)")
-                }
-            }
-
-            // Found the newest valid candidate - now check if it's newer than installed
-            SparkleUpdateChecker.logger.log(.sparkle, "     ")
-            SparkleUpdateChecker.logger.log(.sparkle, "     🎯 Newest valid candidate: \(item.displayVersionString) (build: \(item.versionString))")
-            SparkleUpdateChecker.logger.log(.sparkle, "     Checking if newer than installed version...")
-
-            // Dual-check strategy: Check BOTH display version AND build number
-            let installedDisplayVer = Version(versionNumber: installedDisplayVersion, buildNumber: nil)
-            let availableDisplayVer = Version(versionNumber: item.displayVersionString, buildNumber: nil)
-
-            // Check #1: Display version semantic comparison
-            let displayIsNewer = availableDisplayVer > installedDisplayVer
-            SparkleUpdateChecker.logger.log(.sparkle, "       Check #1 (Display): \(installedDisplayVersion) → \(item.displayVersionString) = \(displayIsNewer ? "✅ NEWER" : "❌ not newer")")
-
-            // Check #2: Build number lexicographical comparison
-            var buildIsNewer = false
-            if let installedBuild = installedBuild {
-                let comparison = item.versionString.compare(installedBuild, options: .numeric)
-                buildIsNewer = (comparison == .orderedDescending)
-                SparkleUpdateChecker.logger.log(.sparkle, "       Check #2 (Build): \(installedBuild) → \(item.versionString) = \(buildIsNewer ? "✅ NEWER" : "❌ not newer")")
-            } else {
-                SparkleUpdateChecker.logger.log(.sparkle, "       Check #2 (Build): Skipped (no installed build number)")
-            }
-
-            // Accept if EITHER check shows update
-            if displayIsNewer || buildIsNewer {
-                SparkleUpdateChecker.logger.log(.sparkle, "       ")
-                SparkleUpdateChecker.logger.log(.sparkle, "       ✅ SELECTED: \(item.displayVersionString) (build: \(item.versionString))")
-                SparkleUpdateChecker.logger.log(.sparkle, "       Reason: \(displayIsNewer ? "Display version is newer" : "Build number is newer")")
-
-                // Cache result for subsequent calls (Sparkle calls this 3 times)
-                cachedBestUpdate = item
-                hasCachedResult = true
-                return item
-            } else {
-                SparkleUpdateChecker.logger.log(.sparkle, "       ⚠️ Candidate is not newer than installed version")
-                SparkleUpdateChecker.logger.log(.sparkle, "       No update available")
-
-                // Cache nil result for subsequent calls
-                cachedBestUpdate = nil
-                hasCachedResult = true
-                return nil
-            }
-        }
-
-        // No valid candidate found after filtering
-        SparkleUpdateChecker.logger.log(.sparkle, "     ")
-        SparkleUpdateChecker.logger.log(.sparkle, "     ❌ No valid update found (all items filtered out)")
-
-        // Cache nil result for subsequent calls
-        cachedBestUpdate = nil
-        hasCachedResult = true
-        return nil
-    }
 }
 
 // MARK: - String Extension

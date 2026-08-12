@@ -8,7 +8,7 @@
 import Foundation
 
 class HomebrewUpdateChecker {
-    static func checkForUpdates(apps: [AppInfo], includeFormulae: Bool, showAutoUpdatesInHomebrew: Bool = true) async -> [UpdateableApp] {
+    static func checkForUpdates(apps: [AppInfo], includeFormulae: Bool, showAutoUpdatesInHomebrew: Bool = true) async -> UpdateCheckResults {
         await GlobalConsoleManager.shared.appendOutput("Checking for Homebrew updates...\n", source: CurrentPage.updater.title)
 
         // Filter apps that have a cask identifier
@@ -32,47 +32,60 @@ class HomebrewUpdateChecker {
         var installedFormulae: [InstalledPackage] = []
 
         // Scan casks (always needed)
-        try? await HomebrewController.shared.streamInstalledPackages(cask: true) { name, displayName, desc, version, isPinned, tap, tapRbPath, installedOnRequest in
-            // Check for cancellation during streaming
-            if Task.isCancelled {
-                return
-            }
-            installedCasks.append(InstalledPackage(
-                name: name,
-                displayName: displayName,
-                description: desc,
-                version: version,
-                isCask: true,
-                isPinned: isPinned,
-                tap: tap,
-                tapRbPath: tapRbPath,
-                installedOnRequest: installedOnRequest  // Always true for casks
-            ))
-        }
-
-        // Check for cancellation before scanning formulae
-        if Task.isCancelled {
-            return []
-        }
-
-        // Scan formulae only if enabled
-        if includeFormulae {
-            try? await HomebrewController.shared.streamInstalledPackages(cask: false) { name, displayName, desc, version, isPinned, tap, tapRbPath, installedOnRequest in
-                // Check for cancellation during streaming
-                if Task.isCancelled {
-                    return
-                }
-                installedFormulae.append(InstalledPackage(
+        do {
+            try await HomebrewController.shared.streamInstalledPackages(cask: true) { name, displayName, desc, version, isPinned, tap, tapRbPath, installedOnRequest in
+                guard !Task.isCancelled else { return }
+                installedCasks.append(InstalledPackage(
                     name: name,
                     displayName: displayName,
                     description: desc,
                     version: version,
-                    isCask: false,
+                    isCask: true,
                     isPinned: isPinned,
                     tap: tap,
                     tapRbPath: tapRbPath,
-                    installedOnRequest: installedOnRequest
+                    installedOnRequest: installedOnRequest  // Always true for casks
                 ))
+            }
+        } catch {
+            return UpdateCheckResults(failures: brewApps.map {
+                UpdateCheckFailure(
+                    appPath: $0.path,
+                    appName: $0.appName,
+                    message: "Homebrew packages could not be read: \(error.localizedDescription)"
+                )
+            })
+        }
+
+        // Check for cancellation before scanning formulae
+        if Task.isCancelled {
+            return UpdateCheckResults()
+        }
+
+        // Scan formulae only if enabled
+        if includeFormulae {
+            do {
+                try await HomebrewController.shared.streamInstalledPackages(cask: false) { name, displayName, desc, version, isPinned, tap, tapRbPath, installedOnRequest in
+                    guard !Task.isCancelled else { return }
+                    installedFormulae.append(InstalledPackage(
+                        name: name,
+                        displayName: displayName,
+                        description: desc,
+                        version: version,
+                        isCask: false,
+                        isPinned: isPinned,
+                        tap: tap,
+                        tapRbPath: tapRbPath,
+                        installedOnRequest: installedOnRequest
+                    ))
+                }
+            } catch {
+                // Formulae are optional in this screen. Keep cask results usable
+                // instead of failing the entire application update scan.
+                await GlobalConsoleManager.shared.appendOutput(
+                    "Could not read Homebrew formulae: \(error.localizedDescription)\n",
+                    source: CurrentPage.updater.title
+                )
             }
         }
 
@@ -84,39 +97,37 @@ class HomebrewUpdateChecker {
         }
         await GlobalConsoleManager.shared.appendOutput(")...\n", source: CurrentPage.updater.title)
 
-        let outdatedPackages = await HomebrewController.shared.getOutdatedPackagesHybrid(
+        let checkResult = await HomebrewController.shared.getOutdatedPackagesHybridResult(
             formulae: installedFormulae,
             casks: installedCasks
         )
 
-        guard !outdatedPackages.isEmpty else {
+        if checkResult.outdated.isEmpty {
             await GlobalConsoleManager.shared.appendOutput("All Homebrew packages are up to date\n", source: CurrentPage.updater.title)
-            return []
+        } else {
+            await GlobalConsoleManager.shared.appendOutput("Found \(checkResult.outdated.count) outdated package(s)\n", source: CurrentPage.updater.title)
         }
 
-        await GlobalConsoleManager.shared.appendOutput("Found \(outdatedPackages.count) outdated package(s)\n", source: CurrentPage.updater.title)
+        var results = UpdateCheckResults()
+        let outdatedNames = Set(checkResult.outdated.map(\.name))
 
-        var updateableApps: [UpdateableApp] = []
+        for app in brewApps {
+            guard let cask = app.cask else { continue }
+            if checkResult.checkedPackageNames.contains(cask), !outdatedNames.contains(cask) {
+                results.currentAppPaths.insert(app.path)
+            } else if checkResult.failedPackageNames.contains(cask) {
+                results.failures.append(UpdateCheckFailure(
+                    appPath: app.path,
+                    appName: app.appName,
+                    message: "Homebrew metadata could not be verified"
+                ))
+            }
+        }
 
         // Process outdated casks (GUI apps) - no API calls needed, versions already included
-        for outdatedPkg in outdatedPackages where outdatedPkg.isCask {
+        for outdatedPkg in checkResult.outdated where outdatedPkg.isCask {
             // Find matching app by cask name
             guard let appInfo = brewApps.first(where: { $0.cask == outdatedPkg.name }) else { continue }
-
-            // Use app's ACTUAL version from Info.plist (ground truth) instead of Homebrew's stale record
-            // This eliminates false positives for auto-updating apps (Sparkle, direct downloads)
-            let installedClean = appInfo.appVersion.stripBrewRevisionSuffix()
-            let availableClean = outdatedPkg.availableVersion.stripBrewRevisionSuffix()
-
-            // Compare ACTUAL app version vs latest Homebrew version
-            let installed = Version(versionNumber: installedClean, buildNumber: nil)
-            let available = Version(versionNumber: availableClean, buildNumber: nil)
-
-            // Only add if truly outdated (available > installed)
-            // Homebrew's .metadata/ record is ignored for comparison (can be stale if app auto-updated)
-            guard !installed.isEmpty && !available.isEmpty && available > installed else {
-                continue  // Skip if versions are equal, invalid, or installed is newer
-            }
 
             // Keep actual version from Info.plist for accurate UI display
             // (Comparison above already used this version, so UI should match)
@@ -170,7 +181,7 @@ class HomebrewUpdateChecker {
                 fetchedReleaseNotes: nil,  // Homebrew doesn't provide release notes
                 appcastItem: nil  // Homebrew doesn't use Sparkle
             )
-            updateableApps.append(updateableApp)
+            results.updates.append(updateableApp)
         }
 
         // Process outdated formulae (CLI tools) if enabled - no API calls needed
@@ -178,7 +189,7 @@ class HomebrewUpdateChecker {
             // Get the set of cask names we've already processed
             let processedCasks = Set(brewApps.compactMap { $0.cask })
 
-            for outdatedPkg in outdatedPackages where !outdatedPkg.isCask {
+            for outdatedPkg in checkResult.outdated where !outdatedPkg.isCask {
                 // Skip if this formula name matches a cask we already processed
                 guard !processedCasks.contains(outdatedPkg.name) else { continue }
 
@@ -246,12 +257,12 @@ class HomebrewUpdateChecker {
                     foundInRegion: nil,
                     appcastItem: nil  // Homebrew doesn't use Sparkle
                 )
-                updateableApps.append(updateableApp)
+                results.updates.append(updateableApp)
             }
         }
 
-        await GlobalConsoleManager.shared.appendOutput("Processed \(updateableApps.count) updateable app(s) from Homebrew\n", source: CurrentPage.updater.title)
+        await GlobalConsoleManager.shared.appendOutput("Processed \(results.updates.count) updateable app(s) from Homebrew\n", source: CurrentPage.updater.title)
 
-        return updateableApps
+        return results
     }
 }

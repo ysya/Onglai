@@ -48,7 +48,7 @@ struct UpdaterSourcesSettings: AppStorageCodable {
 
     struct SparkleSettings: Codable {
         var enabled: Bool = true
-        var includePreReleases: Bool = true
+        var includePreReleases: Bool = false
     }
 
     struct AppStoreSettings: Codable {
