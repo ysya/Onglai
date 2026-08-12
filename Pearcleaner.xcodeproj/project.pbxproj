@@ -986,11 +986,11 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Pearcleaner/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Pearcleaner;
+				INFOPLIST_KEY_CFBundleDisplayName = Onglai;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "Pearcleaner requires full disk access to be able to delete files in locations with no permission";
-				INFOPLIST_KEY_NSSystemExtensionUsageDescription = "Pearcleaner requires this permission for the Finder Extension";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "Onglai requires full disk access to be able to delete files in locations with no permission";
+				INFOPLIST_KEY_NSSystemExtensionUsageDescription = "Onglai requires this permission for the Finder Extension";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -1045,11 +1045,11 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Pearcleaner/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Pearcleaner;
+				INFOPLIST_KEY_CFBundleDisplayName = Onglai;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "Pearcleaner requires full disk access to be able to delete files in locations with no permission";
-				INFOPLIST_KEY_NSSystemExtensionUsageDescription = "Pearcleaner requires this permission for the Finder Extension";
+				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "Onglai requires full disk access to be able to delete files in locations with no permission";
+				INFOPLIST_KEY_NSSystemExtensionUsageDescription = "Onglai requires this permission for the Finder Extension";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

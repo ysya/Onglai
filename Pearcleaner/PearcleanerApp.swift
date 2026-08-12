@@ -41,7 +41,7 @@ struct PearcleanerApp: App {
 
     var body: some Scene {
 
-        WindowGroup {
+        WindowGroup("Onglai") {
             MainWindow()
                 .environmentObject(appState)
                 .environmentObject(locations)
