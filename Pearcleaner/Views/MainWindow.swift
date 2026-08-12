@@ -20,6 +20,7 @@ struct MainWindow: View {
     @EnvironmentObject var locations: Locations
     @EnvironmentObject var fsm: FolderSettingsManager
     @EnvironmentObject var updater: Updater
+    @EnvironmentObject var selfUpdater: OnglaiUpdater
     @EnvironmentObject var permissionManager: PermissionManagerLocal
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("settings.general.glass") private var glass: Bool = false
@@ -36,7 +37,6 @@ struct MainWindow: View {
     @State private var isFullscreen = false
 
     // Badges
-    @State private var showUpdateView = false
     @State private var showFeatureView = false
     @State private var showPermissionList = false
     @State private var glowRadius = 0.0
@@ -127,6 +127,7 @@ struct MainWindow: View {
             // Badge overlay (unified overlay for all badge notifications)
             BadgeOverlay()
                 .environmentObject(updater)
+                .environmentObject(selfUpdater)
                 .zIndex(100)
 
         }
@@ -143,10 +144,6 @@ struct MainWindow: View {
         .onOpenURL(perform: { url in
             let deeplinkManager = DeeplinkManager(updater: updater, fsm: fsm)
             deeplinkManager.manage(url: url, appState: appState, locations: locations)
-        })
-        .sheet(isPresented: $updater.sheet, content: {
-            /// This will show the update sheet based on the frequency check function only
-            updater.getUpdateView()
         })
         .sheet(isPresented: $appState.showDeleteHistory, content: {
             DeleteHistoryView()
@@ -172,6 +169,9 @@ struct MainWindow: View {
                     consoleManager.consoleHeight = decoded.height
                 }
             }
+        }
+        .task {
+            await selfUpdater.checkIfNeeded()
         }
         .onChange(of: consoleManager.showConsole) { newValue in
             // Save console state
@@ -274,16 +274,13 @@ struct MainWindow: View {
                 }
 
                 // Notice Icons
-                if updater.updateAvailable {
+                if selfUpdater.updateAvailable {
                     noticeButton(
                         image: "icloud.and.arrow.down.fill",
                         color: .green,
                         help: "Update Available"
                     ) {
-                        showUpdateView.toggle()
-                    }
-                    .sheet(isPresented: $showUpdateView) {
-                        updater.getUpdateView()
+                        openAppSettingsWindow(tab: .update, updater: updater)
                     }
                 } else if updater.announcementAvailable {
                     noticeButton(

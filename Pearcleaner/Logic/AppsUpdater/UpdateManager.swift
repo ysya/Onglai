@@ -202,7 +202,8 @@ class UpdateManager: ObservableObject {
         for (path, issues) in issuesByPath {
             let appInfo = AppState.shared.sortedApps.first { $0.path.standardizedFileURL == path }
             let isUnsupportedConfiguration = issues.allSatisfy {
-                $0.message == "No valid Sparkle feed URL was found"
+                $0.message == SparkleUpdateChecker.invalidFeedConfigurationMessage ||
+                $0.message == SparkleUpdateChecker.invalidSigningConfigurationMessage
             }
             items.append(
                 UpdaterListItem(
@@ -534,10 +535,9 @@ class UpdateManager: ObservableObject {
 
             if sourcesToScan.contains(.sparkle) {
                 group.addTask {
-                    // Show all apps with Sparkle, regardless of other update sources
-                    // This allows users to see version differences across App Store/Homebrew/Sparkle
-                    // and choose which source to update from
-                    let sparkleApps = apps.filter { $0.hasSparkle }
+                    // App Store receipts are authoritative. MAS builds may
+                    // contain stale Sparkle metadata that is not usable.
+                    let sparkleApps = apps.filter { $0.hasSparkle && !$0.isAppStore }
 
                     let results = await SparkleUpdateChecker.checkForUpdates(apps: sparkleApps, includePreReleases: self.includeSparklePreReleases)
                     return (.sparkle, results)
@@ -686,7 +686,7 @@ class UpdateManager: ObservableObject {
            !(app.autoUpdates == true && !showAutoUpdatesInHomebrew) {
             applicableSources.append(.homebrew)
         }
-        if checkSparkle, app.hasSparkle {
+        if checkSparkle, app.hasSparkle, !app.isAppStore {
             applicableSources.append(.sparkle)
         }
 

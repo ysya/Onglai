@@ -47,7 +47,10 @@ struct AppCommands: Commands {
             .keyboardShortcut(",", modifiers: .command)
 
             Button {
-                updater.checkForUpdates(sheet: true, force: true)
+                openAppSettingsWindow(tab: .update, updater: updater)
+                Task {
+                    await OnglaiUpdater.shared.checkForUpdates()
+                }
             } label: {
                 Label("Check for Updates", systemImage: "tray.and.arrow.down.fill")
             }

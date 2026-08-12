@@ -89,12 +89,14 @@ struct UpdateRowViewSidebar: View {
                 isHovered = hovering
             }
         }
-        .task(id: item.primaryApp?.id) {
+        .task(id: "\(item.primaryApp?.id.uuidString ?? "none"):\(isSelected)") {
             guard let app = item.primaryApp,
+                  isSelected,
                   let notesLink = app.releaseNotesLink,
                   let notesURL = URL(string: notesLink),
+                  !ReleaseNotesProcessor.hasContent(app.releaseDescription),
                   app.fetchedReleaseNotes == nil else { return }
-            await fetchReleaseNotes(for: app.id, from: notesURL)
+            await fetchReleaseNotes(for: app, from: notesURL)
         }
     }
 
@@ -175,17 +177,50 @@ struct UpdateRowViewSidebar: View {
         }
     }
 
-    private func fetchReleaseNotes(for appID: UUID, from url: URL) async {
+    private func fetchReleaseNotes(for app: UpdateableApp, from url: URL) async {
         do {
-            var request = URLRequest(url: url, timeoutInterval: 3)
+            var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 12)
             request.httpMethod = "GET"
-            let (data, _) = try await URLSession.shared.data(for: request)
-            guard let content = String(data: data, encoding: .utf8) else { return }
+
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode),
+                  isSupportedReleaseNotesResponse(httpResponse),
+                  httpResponse.expectedContentLength <= Int64(ReleaseNotesProcessor.externalNotesSizeLimit) else {
+                return
+            }
+
+            var data = Data()
+            data.reserveCapacity(min(
+                max(Int(httpResponse.expectedContentLength), 0),
+                ReleaseNotesProcessor.externalNotesSizeLimit
+            ))
+            for try await byte in bytes {
+                guard data.count < ReleaseNotesProcessor.externalNotesSizeLimit else { return }
+                data.append(byte)
+            }
+
+            guard let rawContent = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
+                  let content = ReleaseNotesProcessor.normalizeExternalDocument(
+                      rawContent,
+                      installedVersion: app.appInfo.appVersion,
+                      availableVersion: app.availableVersion
+                  ) else {
+                return
+            }
+
             await MainActor.run {
-                updateManager.updateFetchedReleaseNotes(for: appID, content: content)
+                updateManager.updateFetchedReleaseNotes(for: app.id, content: content)
             }
         } catch {
             // Release notes are optional; the detail view will use inline notes.
         }
+    }
+
+    private func isSupportedReleaseNotesResponse(_ response: HTTPURLResponse) -> Bool {
+        guard let mimeType = response.mimeType?.lowercased() else { return true }
+        return mimeType.hasPrefix("text/") ||
+            mimeType == "application/xhtml+xml" ||
+            mimeType == "application/xml"
     }
 }

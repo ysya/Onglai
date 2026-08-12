@@ -362,6 +362,11 @@ struct UpdateDetailView: View {
                             .foregroundStyle(.blue)
                     }
                     .buttonStyle(.plain)
+                } else if ReleaseNotesProcessor.hasContent(app.fetchedReleaseNotes) ||
+                            ReleaseNotesProcessor.hasContent(app.releaseDescription) {
+                    Text("Release Notes")
+                        .font(.subheadline)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                 } else {
                     Text("No Changelog")
                         .font(.subheadline)

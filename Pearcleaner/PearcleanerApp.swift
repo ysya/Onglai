@@ -19,9 +19,10 @@ struct PearcleanerApp: App {
     //MARK: StateObjects
     @StateObject var locations = Locations()
     @StateObject var fsm = FolderSettingsManager.shared
-    // Personal fork: point self-updates at the fork so an upstream release
-    // can never replace this build (no releases published -> check is a no-op)
+    // AlinFoundation remains responsible for announcements only. OnglaiUpdater
+    // owns release checks so the legacy in-place installer cannot replace the app.
     @StateObject private var updater = Updater(owner: "ysya", repo: "Onglai")
+    @StateObject private var selfUpdater = OnglaiUpdater.shared
 
     init() {
         //MARK: GUI or CLI launch mode.
@@ -47,6 +48,7 @@ struct PearcleanerApp: App {
                 .environmentObject(locations)
                 .environmentObject(fsm)
                 .environmentObject(updater)
+                .environmentObject(selfUpdater)
                 .environmentObject(permissionManager)
 
         }

@@ -36,6 +36,8 @@ private enum SparkleSingleAppCheckResult: @unchecked Sendable {
 
 class SparkleUpdateChecker {
     fileprivate static let logger = UpdaterDebugLogger.shared
+    static let invalidSigningConfigurationMessage = "This app's Sparkle signing configuration does not support external update checks"
+    static let invalidFeedConfigurationMessage = "This app does not expose a usable Sparkle feed"
 
     /// Check for Sparkle updates using SPUUpdater directly
     /// Only checks apps with SUFeedURL in Info.plist (no binary scanning)
@@ -48,6 +50,13 @@ class SparkleUpdateChecker {
         var results = UpdateCheckResults()
 
         for appInfo in apps {
+            // App Store receipts are authoritative. Some MAS builds retain
+            // stale Sparkle keys that are not an alternative update channel.
+            guard !appInfo.isAppStore else {
+                logger.log(.sparkle, "Skipping App Store app: \(appInfo.appName)")
+                continue
+            }
+
             guard let bundle = Bundle(url: appInfo.path) else {
                 results.failures.append(UpdateCheckFailure(
                     appPath: appInfo.path,
@@ -57,11 +66,21 @@ class SparkleUpdateChecker {
                 continue
             }
 
+            if hasInvalidEdDSAPublicKey(in: bundle) {
+                logger.log(.sparkle, "Skipping invalid EdDSA key: \(appInfo.appName)")
+                results.failures.append(UpdateCheckFailure(
+                    appPath: appInfo.path,
+                    appName: appInfo.appName,
+                    message: invalidSigningConfigurationMessage
+                ))
+                continue
+            }
+
             guard let feedURL = Self.feedURL(from: bundle) else {
                 results.failures.append(UpdateCheckFailure(
                     appPath: appInfo.path,
                     appName: appInfo.appName,
-                    message: "No valid Sparkle feed URL was found"
+                    message: invalidFeedConfigurationMessage
                 ))
                 continue
             }
@@ -144,7 +163,7 @@ class SparkleUpdateChecker {
 
         // 1. Check SUFeedURL in Info.plist (standard Sparkle configuration)
         if let urlString = information["SUFeedURL"] as? String,
-           let feedURL = URL(string: urlString.unquoted) {
+           let feedURL = validatedFeedURL(from: urlString) {
             return feedURL
         }
 
@@ -162,6 +181,61 @@ class SparkleUpdateChecker {
         }
 
         return nil
+    }
+
+    /// Only absolute HTTP(S) feeds can be checked outside of the host app.
+    /// Some apps use placeholders such as `NULL` and replace them dynamically
+    /// at runtime; Foundation otherwise accepts these as relative URLs.
+    static func validatedFeedURL(from rawValue: String) -> URL? {
+        let value = rawValue
+            .unquoted
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !value.isEmpty,
+              !["null", "(null)", "nil"].contains(value.lowercased()),
+              let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else {
+            return nil
+        }
+
+        return url
+    }
+
+    /// Sparkle 2 expects SUPublicEDKey to contain a raw 32-byte Ed25519 public
+    /// key encoded as one Base64 string. A PEM/DSA key in this field causes
+    /// SPUUpdater.start() to fail with a low-level cryptographic error.
+    static func hasInvalidEdDSAPublicKey(in bundle: Bundle) -> Bool {
+        guard let information = bundle.infoDictionary,
+              information.keys.contains("SUPublicEDKey") else {
+            return false
+        }
+
+        guard let rawKey = information["SUPublicEDKey"] as? String else {
+            return true
+        }
+
+        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.contains("-----BEGIN"),
+              let decodedKey = Data(base64Encoded: key) else {
+            return true
+        }
+
+        return decodedKey.count != 32
+    }
+
+    /// Sparkle reports signing setup problems through one error code, including
+    /// missing, malformed, or legacy-only public keys. Keep the detailed error
+    /// in diagnostics while presenting it as an unsupported third-party setup.
+    fileprivate static func userFacingFailureMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        guard nsError.domain == SUSparkleErrorDomain,
+              nsError.code == SUError.noPublicDSAFoundError.rawValue else {
+            return error.localizedDescription
+        }
+
+        return invalidSigningConfigurationMessage
     }
 
 }
@@ -205,7 +279,7 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
             updater.checkForUpdates()
         } catch {
             SparkleUpdateChecker.logger.log(.sparkle, "  ❌ Failed to start updater: \(error.localizedDescription)")
-            finish(with: .failed(failure(error.localizedDescription)))
+            finish(with: .failed(failure(SparkleUpdateChecker.userFacingFailureMessage(for: error))))
         }
     }
 
@@ -262,7 +336,11 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
             releaseTitle = title
         }
         if let description = appcastItem.itemDescription {
-            releaseDescription = description
+            releaseDescription = ReleaseNotesProcessor.normalize(
+                description,
+                installedVersion: appInfo.appVersion,
+                availableVersion: availableVersionString
+            )
         }
         if let notesURL = appcastItem.releaseNotesURL ?? appcastItem.fullReleaseNotesURL {
             releaseNotesLink = notesURL.absoluteString
@@ -471,7 +549,7 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
 
         case .error(let error):
             SparkleUpdateChecker.logger.log(.sparkle, "  ❌ Sparkle error: \(error.localizedDescription)")
-            finish(with: .failed(failure(error.localizedDescription)))
+            finish(with: .failed(failure(SparkleUpdateChecker.userFacingFailureMessage(for: error))))
             acknowledgement?()
         }
     }

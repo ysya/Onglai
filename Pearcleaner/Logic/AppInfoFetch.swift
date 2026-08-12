@@ -95,8 +95,12 @@ class MetadataAppInfoFetcher {
 
         // Detect update sources (done at load time for performance)
         let bundle = Bundle(url: path)
-        let hasSparkle = AppCategoryDetector.checkForSparkle(bundle: bundle, infoDict: bundle?.infoDictionary)
         let isAppStore = AppCategoryDetector.checkForAppStore(bundle: bundle, path: path, wrapped: wrapped)
+        let hasSparkle = AppCategoryDetector.checkForSparkle(
+            bundle: bundle,
+            infoDict: bundle?.infoDictionary,
+            isAppStore: isAppStore
+        )
 
         // Extract App Store adamID from metadata (if available)
         let adamID: UInt64? = {
@@ -227,8 +231,12 @@ class MetadataAppInfoFetcher {
         let webApp = AppInfoUtils.isWebApp(appPath: path)
 
         // Detect update sources
-        let hasSparkle = AppCategoryDetector.checkForSparkle(bundle: bundle, infoDict: infoDict)
         let isAppStore = AppCategoryDetector.checkForAppStore(bundle: bundle, path: path, wrapped: wrapped)
+        let hasSparkle = AppCategoryDetector.checkForSparkle(
+            bundle: bundle,
+            infoDict: infoDict,
+            isAppStore: isAppStore
+        )
 
         // Get build number
         let appBuildNumber: String? = {
@@ -285,7 +293,15 @@ class AppCategoryDetector {
     /// Check if app has Sparkle update framework
     /// Detects Sparkle by checking for common Info.plist keys
     /// Excludes SetApp apps (they use Sparkle but are managed by SetApp)
-    static func checkForSparkle(bundle: Bundle?, infoDict: [String: Any]?) -> Bool {
+    static func checkForSparkle(
+        bundle: Bundle?,
+        infoDict: [String: Any]?,
+        isAppStore: Bool = false
+    ) -> Bool {
+        // App Store builds must be updated through the App Store. Some bundles
+        // retain stale Sparkle keys even though their shipping build does not
+        // include a usable Sparkle updater.
+        guard !isAppStore else { return false }
         guard let dict = infoDict ?? bundle?.infoDictionary else { return false }
 
         // Check for common Sparkle keys
@@ -331,6 +347,13 @@ class AppCategoryDetector {
             if FileManager.default.fileExists(atPath: iTunesMetadataPath) {
                 return true
             }
+        }
+
+        // Check the conventional receipt path directly as a fallback for fresh
+        // bundles that Foundation has not cached yet.
+        let directReceiptPath = path.appendingPathComponent("Contents/_MASReceipt/receipt").path
+        if FileManager.default.fileExists(atPath: directReceiptPath) {
+            return true
         }
 
         // Check for traditional Mac app receipt
@@ -528,8 +551,12 @@ class AppInfoFetcher {
             let teamIdentifier = getTeamIdentifier(for: path.path)
 
             // Detect update sources (done at load time for performance)
-            let hasSparkle = AppCategoryDetector.checkForSparkle(bundle: bundle, infoDict: bundle.infoDictionary)
             let isAppStore = AppCategoryDetector.checkForAppStore(bundle: bundle, path: path, wrapped: wrapped)
+            let hasSparkle = AppCategoryDetector.checkForSparkle(
+                bundle: bundle,
+                infoDict: bundle.infoDictionary,
+                isAppStore: isAppStore
+            )
 
             // adamID not available in fallback path (no mdls metadata)
             let adamID: UInt64? = nil
@@ -568,8 +595,12 @@ class AppInfoFetcher {
             let teamIdentifier = getTeamIdentifier(for: path.path)
 
             // Detect update sources (done at load time for performance)
-            let hasSparkle = AppCategoryDetector.checkForSparkle(bundle: nil, infoDict: infoDict)
             let isAppStore = AppCategoryDetector.checkForAppStore(bundle: nil, path: path, wrapped: wrapped)
+            let hasSparkle = AppCategoryDetector.checkForSparkle(
+                bundle: nil,
+                infoDict: infoDict,
+                isAppStore: isAppStore
+            )
 
             // adamID not available in fallback path (no mdls metadata)
             let adamID: UInt64? = nil
@@ -809,5 +840,4 @@ private func getTeamIdentifier(for appPath: String) -> String? {
         return nil
     }
 }
-
 

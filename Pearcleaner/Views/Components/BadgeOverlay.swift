@@ -18,6 +18,7 @@ enum OverlayType {
 
 struct BadgeOverlay: View {
     @EnvironmentObject var updater: Updater
+    @EnvironmentObject var selfUpdater: OnglaiUpdater
     @ObservedObject var helperManager = HelperToolManager.shared
     @ObservedObject var permissionManager = PermissionManagerLocal.shared
     @Environment(\.colorScheme) var colorScheme
@@ -26,7 +27,6 @@ struct BadgeOverlay: View {
     @State private var isVisible: Bool = false
     @State private var isExpanded: Bool = false
     @State private var showPermissionList: Bool = false
-    @State private var showUpdateView: Bool = false
     @State private var showFeatureView: Bool = false
     @State private var dismissedOverlays: Set<OverlayType> = []
 
@@ -47,7 +47,7 @@ struct BadgeOverlay: View {
         }
 
         // Update: third priority
-        if updater.updateAvailable && !dismissedOverlays.contains(.update) {
+        if selfUpdater.updateAvailable && !dismissedOverlays.contains(.update) {
             return .update
         }
 
@@ -391,7 +391,8 @@ struct BadgeOverlay: View {
 
         HStack {
             Button {
-                showUpdateView.toggle()
+                openAppSettingsWindow(tab: .update, updater: updater)
+                dismissOverlay()
             } label: {
                 HStack {
                     Image(systemName: "arrow.down.circle")
@@ -405,9 +406,6 @@ struct BadgeOverlay: View {
             }
             .buttonStyle(.plain)
             .help("View update details and download")
-            .sheet(isPresented: $showUpdateView) {
-                updater.getUpdateView()
-            }
 
             Spacer()
 

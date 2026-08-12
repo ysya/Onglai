@@ -94273,6 +94273,125 @@
         }
       }
     },
+    "Automatic installation is unavailable for this free development-signed build. macOS may require Open Anyway after you replace the app." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die automatische Installation ist für diesen kostenlos entwicklersignierten Build nicht verfügbar. Nach dem Ersetzen der App kann macOS „Dennoch öffnen“ verlangen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La instalación automática no está disponible para esta compilación gratuita firmada para desarrollo. Tras reemplazar la app, es posible que macOS requiera «Abrir igualmente»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’installation automatique n’est pas disponible pour cette version gratuite signée pour le développement. Après avoir remplacé l’app, macOS peut demander « Ouvrir quand même »."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Penginstalan otomatis tidak tersedia untuk build gratis yang ditandatangani untuk pengembangan ini. Setelah mengganti app, macOS mungkin meminta Buka Juga."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’installazione automatica non è disponibile per questa build gratuita firmata per lo sviluppo. Dopo aver sostituito l’app, macOS potrebbe richiedere Apri comunque."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無料の開発用署名ビルドでは自動インストールを利用できません。App を置き換えた後、macOS で「このまま開く」が必要になる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 무료 개발 서명 빌드에서는 자동 설치를 사용할 수 없습니다. 앱을 교체한 후 macOS에서 ‘그래도 열기’를 요구할 수 있습니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatyczna instalacja nie jest dostępna dla tej bezpłatnej kompilacji podpisanej dewelopersko. Po zastąpieniu aplikacji macOS może wymagać opcji Otwórz mimo to."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A instalação automática não está disponível para esta compilação gratuita assinada para desenvolvimento. Após substituir o app, o macOS pode exigir Abrir Mesmo Assim."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A instalação automática não está disponível para esta compilação gratuita assinada para desenvolvimento. Depois de substituir a app, o macOS pode exigir Abrir Mesmo Assim."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматическая установка недоступна для этой бесплатной сборки с подписью разработчика. После замены приложения macOS может потребовать выбрать «Всё равно открыть»."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatická inštalácia nie je pre túto bezplatnú vývojársky podpísanú zostavu dostupná. Po nahradení aplikácie môže macOS vyžadovať Otvoriť aj tak."
+          }
+        },
+        "sl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Samodejna namestitev za to brezplačno razvojno podpisano različico ni na voljo. Po zamenjavi aplikacije lahko macOS zahteva Vseeno odpri."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu ücretsiz geliştirici imzalı sürüm için otomatik yükleme kullanılamaz. Uygulamayı değiştirdikten sonra macOS Yine de Aç seçeneğini gerektirebilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматичне встановлення недоступне для цієї безплатної збірки з підписом розробника. Після заміни програми macOS може вимагати вибрати «Усе одно відкрити»."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bản dựng miễn phí được ký để phát triển này không hỗ trợ cài đặt tự động. Sau khi thay thế ứng dụng, macOS có thể yêu cầu chọn Vẫn mở."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此免费开发签名版本无法自动安装。替换 App 后，macOS 可能会要求选择“仍要打开”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此免費開發簽署版本無法自動安裝。替換 App 後，macOS 可能會要求選擇「仍要打開」。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此免費開發簽署版本無法自動安裝。替換 App 後，macOS 可能會要求選擇「仍要開啟」。"
+          }
+        }
+      }
+    },
     "Your Homebrew installation is healthy!" : {
       "localizations" : {
         "de" : {

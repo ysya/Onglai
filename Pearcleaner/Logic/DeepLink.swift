@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import AlinFoundation
 
+@MainActor
 class DeeplinkManager {
     private var urlQueue: [URL] = []
     private var isProcessing = false
@@ -250,7 +251,10 @@ class DeeplinkManager {
             appState.currentPage = .lipo
             break
         case DeepLinkActions.checkUpdates:
-            updater.checkForUpdates(sheet: true)
+            openAppSettingsWindow(tab: .update, updater: updater)
+            Task {
+                await OnglaiUpdater.shared.checkForUpdates()
+            }
             break
         case DeepLinkActions.appsPaths:
             if let actionType = queryItems.first(where: { $0.name == "add" || $0.name == "remove" })?.name,
