@@ -2,11 +2,11 @@
 //  OnglaiUpdater.swift
 //  Pearcleaner
 //
-//  Safe, notification-only updater for Onglai releases.
+//  Secure self-updater for Onglai releases.
 //
 
-import AppKit
 import Foundation
+import Sparkle
 import SwiftUI
 
 enum OnglaiUpdateFrequency: String, CaseIterable, Codable, Identifiable {
@@ -81,6 +81,9 @@ final class OnglaiUpdater: ObservableObject {
     @Published var frequency: OnglaiUpdateFrequency {
         didSet {
             defaults.set(frequency.rawValue, forKey: Keys.frequency)
+            if didStartSparkle {
+                applySparkleSchedule()
+            }
         }
     }
 
@@ -126,11 +129,18 @@ final class OnglaiUpdater: ObservableObject {
 
     private let defaults: UserDefaults
     private let session: URLSession
+    private let sparkleController: SPUStandardUpdaterController
     private var lastSuccessfulCheck: Date?
+    private var didStartSparkle = false
 
     private init(defaults: UserDefaults = .standard, session: URLSession = .shared) {
         self.defaults = defaults
         self.session = session
+        self.sparkleController = SPUStandardUpdaterController(
+            startingUpdater: false,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
 
         if let storedFrequency = defaults.string(forKey: Keys.frequency),
            let frequency = OnglaiUpdateFrequency(rawValue: storedFrequency) {
@@ -159,6 +169,7 @@ final class OnglaiUpdater: ObservableObject {
     }
 
     func checkIfNeeded() async {
+        startSparkleIfNeeded()
         guard let interval = frequency.interval else { return }
 
         if let lastSuccessfulCheck,
@@ -170,6 +181,7 @@ final class OnglaiUpdater: ObservableObject {
     }
 
     func checkForUpdates() async {
+        startSparkleIfNeeded()
         guard state != .checking else { return }
         state = .checking
         lastChecked = Date()
@@ -218,6 +230,12 @@ final class OnglaiUpdater: ObservableObject {
             if let encodedRelease = try? JSONEncoder().encode(release) {
                 defaults.set(encodedRelease, forKey: Keys.cachedRelease)
             }
+
+            if updateAvailable,
+               frequency != .never,
+               sparkleController.updater.canCheckForUpdates {
+                sparkleController.updater.checkForUpdatesInBackground()
+            }
         } catch is CancellationError {
             state = latestRelease == nil ? .idle : (updateAvailable ? .available : .current)
         } catch {
@@ -225,8 +243,9 @@ final class OnglaiUpdater: ObservableObject {
         }
     }
 
-    func openLatestRelease() {
-        NSWorkspace.shared.open(latestRelease?.htmlURL ?? AppLinks.releases)
+    func installLatestRelease() {
+        startSparkleIfNeeded()
+        sparkleController.checkForUpdates(nil)
     }
 
     static func normalizedVersion(_ version: String) -> String {
@@ -245,6 +264,23 @@ final class OnglaiUpdater: ObservableObject {
             buildNumber: nil
         )
         return !candidateVersion.isEmpty && !installedVersion.isEmpty && candidateVersion > installedVersion
+    }
+
+    private func startSparkleIfNeeded() {
+        guard !didStartSparkle else { return }
+        didStartSparkle = true
+        sparkleController.startUpdater()
+        applySparkleSchedule()
+    }
+
+    private func applySparkleSchedule() {
+        let sparkleUpdater = sparkleController.updater
+        if let interval = frequency.interval {
+            sparkleUpdater.automaticallyChecksForUpdates = true
+            sparkleUpdater.updateCheckInterval = interval
+        } else {
+            sparkleUpdater.automaticallyChecksForUpdates = false
+        }
     }
 }
 

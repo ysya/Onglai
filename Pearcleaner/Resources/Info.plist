@@ -4,6 +4,18 @@
 <dict>
 	<key>OnglaiAppGroupIdentifier</key>
 	<string>$(ONGLAI_APP_GROUP_IDENTIFIER)</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/ysya/Onglai/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>jOCam59sMZGr7idfYx42W/UeUQvt1L8vlKeuykBnqtU=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

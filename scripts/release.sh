@@ -22,6 +22,7 @@ TEAM_ID="${ONGLAI_DEVELOPMENT_TEAM:-}"
 NOTARY_PROFILE="${ONGLAI_NOTARY_PROFILE:-}"
 APP_GROUP_ID="${ONGLAI_APP_GROUP_IDENTIFIER:-${TEAM_ID}.group.onglai}"
 RELEASE_MODE="${ONGLAI_RELEASE_MODE:-developer-id}"
+SPARKLE_ACCOUNT="${ONGLAI_SPARKLE_ACCOUNT:-onglai}"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: version must use major.minor.patch format" >&2
@@ -71,8 +72,12 @@ ARCHIVE="$WORK_DIR/Onglai.xcarchive"
 EXPORT_DIR="$WORK_DIR/export"
 EXPORT_OPTIONS="$WORK_DIR/ExportOptions.plist"
 DERIVED_DATA="$WORK_DIR/DerivedData"
-ZIP="$WORK_DIR/Onglai-${VERSION}.zip"
+UPDATES_DIR="$WORK_DIR/updates"
+ZIP="$UPDATES_DIR/Onglai-${VERSION}.zip"
+APPCAST="$UPDATES_DIR/appcast.xml"
 COMMITTED=0
+
+mkdir -p "$UPDATES_DIR"
 
 cleanup() {
   if [ "$COMMITTED" -eq 0 ]; then
@@ -106,6 +111,7 @@ EOF
     -configuration Release \
     -destination "generic/platform=macOS" \
     -archivePath "$ARCHIVE" \
+    -derivedDataPath "$DERIVED_DATA" \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     ONGLAI_APP_GROUP_IDENTIFIER="$APP_GROUP_ID" \
     CODE_SIGN_STYLE=Automatic \
@@ -175,6 +181,43 @@ if [ "$RELEASE_MODE" = "developer-id" ]; then
   ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 fi
 
+SPARKLE_BIN_DIR="${ONGLAI_SPARKLE_BIN_DIR:-$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/bin}"
+GENERATE_APPCAST="$SPARKLE_BIN_DIR/generate_appcast"
+GENERATE_KEYS="$SPARKLE_BIN_DIR/generate_keys"
+SIGN_UPDATE="$SPARKLE_BIN_DIR/sign_update"
+
+[ -x "$GENERATE_APPCAST" ] || { echo "error: Sparkle generate_appcast not found at $GENERATE_APPCAST" >&2; exit 1; }
+[ -x "$GENERATE_KEYS" ] || { echo "error: Sparkle generate_keys not found at $GENERATE_KEYS" >&2; exit 1; }
+[ -x "$SIGN_UPDATE" ] || { echo "error: Sparkle sign_update not found at $SIGN_UPDATE" >&2; exit 1; }
+
+BUNDLED_PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist")
+KEYCHAIN_PUBLIC_KEY=$("$GENERATE_KEYS" --account "$SPARKLE_ACCOUNT" -p)
+[ "$BUNDLED_PUBLIC_KEY" = "$KEYCHAIN_PUBLIC_KEY" ] || {
+  echo "error: bundled Sparkle public key does not match Keychain account $SPARKLE_ACCOUNT" >&2
+  exit 1
+}
+
+EXPECTED_FEED_URL="https://github.com/ysya/Onglai/releases/latest/download/appcast.xml"
+BUNDLED_FEED_URL=$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist")
+[ "$BUNDLED_FEED_URL" = "$EXPECTED_FEED_URL" ] || {
+  echo "error: unexpected Sparkle feed URL $BUNDLED_FEED_URL" >&2
+  exit 1
+}
+
+"$GENERATE_APPCAST" \
+  --account "$SPARKLE_ACCOUNT" \
+  --download-url-prefix "https://github.com/ysya/Onglai/releases/download/${VERSION}/" \
+  --full-release-notes-url "https://github.com/ysya/Onglai/releases/tag/${VERSION}" \
+  --link "https://github.com/ysya/Onglai/releases/tag/${VERSION}" \
+  --maximum-versions 1 \
+  -o "$APPCAST" \
+  "$UPDATES_DIR"
+
+xmllint --noout "$APPCAST"
+SPARKLE_SIGNATURE=$(xmllint --xpath 'string(//*[local-name()="enclosure"]/@*[local-name()="edSignature"])' "$APPCAST")
+[ -n "$SPARKLE_SIGNATURE" ] || { echo "error: generated appcast is missing an EdDSA signature" >&2; exit 1; }
+"$SIGN_UPDATE" --account "$SPARKLE_ACCOUNT" --verify "$ZIP" "$SPARKLE_SIGNATURE"
+
 git add Pearcleaner.xcodeproj/project.pbxproj
 git commit -m "chore: release ${VERSION} (build ${BUILD})"
 COMMITTED=1
@@ -190,9 +233,9 @@ else
 fi
 
 if [ -n "$NOTES" ]; then
-  gh release create "$VERSION" "$ZIP" -R ysya/Onglai --target "$COMMIT_SHA" --draft --title "$RELEASE_TITLE" --notes-file "$NOTES"
+  gh release create "$VERSION" "$ZIP" "$APPCAST" -R ysya/Onglai --target "$COMMIT_SHA" --draft --title "$RELEASE_TITLE" --notes-file "$NOTES"
 else
-  gh release create "$VERSION" "$ZIP" -R ysya/Onglai --target "$COMMIT_SHA" --draft --title "$RELEASE_TITLE" --generate-notes
+  gh release create "$VERSION" "$ZIP" "$APPCAST" -R ysya/Onglai --target "$COMMIT_SHA" --draft --title "$RELEASE_TITLE" --generate-notes
 fi
 gh release edit "$VERSION" -R ysya/Onglai --draft=false
 git fetch -q origin "refs/tags/${VERSION}:refs/tags/${VERSION}"

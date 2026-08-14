@@ -201,12 +201,6 @@ struct UpdateSettingsTab: View {
                 }
             }
 
-            Label(
-                "Automatic installation is unavailable for this free development-signed build. macOS may require Open Anyway after you replace the app.",
-                systemImage: "lock.shield"
-            )
-            .font(.footnote)
-            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
         }
     }
 
@@ -222,9 +216,9 @@ struct UpdateSettingsTab: View {
 
         case .available:
             Button {
-                updater.openLatestRelease()
+                updater.installLatestRelease()
             } label: {
-                Label("View Update", systemImage: "arrow.up.right.square")
+                Label("Update", systemImage: "arrow.down.circle")
             }
             .buttonStyle(.borderedProminent)
 
