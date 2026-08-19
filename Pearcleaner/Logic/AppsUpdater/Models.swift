@@ -13,6 +13,8 @@ enum UpdateSource: String, CaseIterable {
     case homebrew = "Homebrew"
     case appStore = "App Store"
     case sparkle = "Sparkle"
+    case electron = "Electron"
+    case managed = "Self-Updating"
     case unsupported = "Unsupported"
     case current = "Current"
 
@@ -24,6 +26,10 @@ enum UpdateSource: String, CaseIterable {
             return "􀎶"
         case .sparkle:
             return "✨"
+        case .electron:
+            return "⚡️"
+        case .managed:
+            return "↗️"
         case .unsupported:
             return "❓"
         case .current:
@@ -89,6 +95,7 @@ struct UpdateableApp: Identifiable, Hashable {
     let source: UpdateSource
     let adamID: UInt64?
     let appStoreURL: String?  // Store URL from iTunes API for "Open in App Store" button
+    var externalURL: String? = nil  // Trusted provider page or download URL opened outside Onglai
     var status: UpdateStatus = .idle
     var progress: Double = 0.0
     var isSelectedForUpdate: Bool = true  // Default to selected for "Update All" queue
@@ -130,6 +137,7 @@ enum UpdaterItemSection: String {
     case external
     case attention
     case current
+    case managed
     case unsupported
 }
 

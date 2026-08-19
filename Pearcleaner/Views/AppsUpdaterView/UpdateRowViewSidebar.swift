@@ -126,7 +126,7 @@ struct UpdateRowViewSidebar: View {
             Text("Error")
                 .foregroundStyle(.orange)
         } else if let app = item.primaryApp {
-            if app.source == .current || app.source == .unsupported {
+            if app.source == .current || app.source == .managed || app.source == .unsupported {
                 Text(verbatim: app.appInfo.appVersion)
                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
             } else if let availableVersion = app.availableVersion {
@@ -163,6 +163,8 @@ struct UpdateRowViewSidebar: View {
         case .homebrew: return "terminal"
         case .appStore: return "macwindow"
         case .sparkle: return "sparkles"
+        case .electron: return "bolt.fill"
+        case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"
         }
@@ -173,6 +175,8 @@ struct UpdateRowViewSidebar: View {
         case .homebrew: return .green
         case .appStore: return .purple
         case .sparkle: return .orange
+        case .electron: return .yellow
+        case .managed: return .blue
         case .unsupported, .current: return .gray
         }
     }

@@ -61,6 +61,7 @@ class UpdateManager: ObservableObject {
     private var checkAppStore: Bool { sources.appStore.enabled }
     private var checkHomebrew: Bool { sources.homebrew.enabled }
     private var checkSparkle: Bool { sources.sparkle.enabled }
+    private var checkElectron: Bool { sources.electron.enabled }
     private var showAutoUpdatesInHomebrew: Bool { sources.homebrew.showAutoUpdates }
     private var includeSparklePreReleases: Bool { sources.sparkle.includePreReleases }
     private var showUnsupported: Bool { display.showUnsupported }
@@ -160,7 +161,7 @@ class UpdateManager: ObservableObject {
 
     var totalUpdateCount: Int {
         updatesBySource
-            .filter { $0.key != .unsupported && $0.key != .current }
+            .filter { $0.key != .unsupported && $0.key != .managed && $0.key != .current }
             .values
             .reduce(0) { $0 + $1.count }
     }
@@ -170,7 +171,9 @@ class UpdateManager: ObservableObject {
     /// flows can continue to operate on their original records.
     var appCentricItems: [UpdaterListItem] {
         let sourceApps = updatesBySource.values.flatMap { $0 }
-        let actionableApps = sourceApps.filter { $0.source != .current && $0.source != .unsupported }
+        let actionableApps = sourceApps.filter {
+            $0.source != .current && $0.source != .managed && $0.source != .unsupported
+        }
         var items: [UpdaterListItem] = []
 
         for (_, candidates) in Dictionary(grouping: actionableApps, by: { $0.appInfo.path.standardizedFileURL }) {
@@ -178,7 +181,7 @@ class UpdateManager: ObservableObject {
             items.append(
                 UpdaterListItem(
                     id: "update:\(primary.appInfo.path.standardizedFileURL.path)",
-                    section: primary.appInfo.isAppStore || primary.source == .appStore ? .external : .available,
+                    section: primary.canUpdate ? .available : .external,
                     appInfo: primary.appInfo,
                     primaryApp: primary,
                     alternateApps: candidates.filter { $0.id != primary.id },
@@ -217,8 +220,13 @@ class UpdateManager: ObservableObject {
             )
         }
 
-        for source in [UpdateSource.current, .unsupported] {
-            let section: UpdaterItemSection = source == .current ? .current : .unsupported
+        for source in [UpdateSource.current, .managed, .unsupported] {
+            let section: UpdaterItemSection
+            switch source {
+            case .current: section = .current
+            case .managed: section = .managed
+            default: section = .unsupported
+            }
             for app in updatesBySource[source] ?? [] {
                 let path = app.appInfo.path.standardizedFileURL
                 items.append(
@@ -247,9 +255,10 @@ class UpdateManager: ObservableObject {
         if app.appInfo.isAppStore, app.source == .appStore { return 0 }
         if app.appInfo.cask != nil, app.source == .homebrew { return 1 }
         if app.source == .sparkle { return 2 }
-        if app.source == .homebrew { return 3 }
-        if app.source == .appStore { return 4 }
-        return 5
+        if app.source == .electron { return 3 }
+        if app.source == .homebrew { return 4 }
+        if app.source == .appStore { return 5 }
+        return 6
     }
 
     func setSelection(forAppAt path: URL, selected: Bool) {
@@ -405,6 +414,13 @@ class UpdateManager: ObservableObject {
             )
             return results.updates.first
 
+        case .electron:
+            let results = await ElectronUpdateChecker.checkForUpdates(apps: [freshAppInfo])
+            return results.updates.first
+
+        case .managed:
+            return nil // The app or its vendor owns this update flow
+
         case .unsupported:
             return nil // Can't check unsupported apps
 
@@ -484,6 +500,7 @@ class UpdateManager: ObservableObject {
             if checkAppStore { sourcesToScan.insert(.appStore) }
             if checkHomebrew { sourcesToScan.insert(.homebrew) }
             if checkSparkle { sourcesToScan.insert(.sparkle) }
+            if checkElectron { sourcesToScan.insert(.electron) }
 
             // Clear all results
             updatesBySource = [:]
@@ -544,6 +561,14 @@ class UpdateManager: ObservableObject {
                 }
             }
 
+            if sourcesToScan.contains(.electron) {
+                group.addTask {
+                    let electronApps = apps.filter(ElectronUpdateChecker.isEligible)
+                    let results = await ElectronUpdateChecker.checkForUpdates(apps: electronApps)
+                    return (.electron, results)
+                }
+            }
+
             // Process results as they complete
             for await (source, results) in group {
                 // Check for cancellation between source results
@@ -584,6 +609,63 @@ class UpdateManager: ObservableObject {
             updatesBySource[.homebrew] = deduplicatedHomebrew
         }
 
+        // Sparkle apps with runtime-only feeds or unusable external signing are
+        // not truly unsupported: the host app still owns a working update path.
+        var managedOverrides: [URL: ManagedUpdateMechanism] = [:]
+        if let sparkleFailures = scanFailuresBySource[.sparkle] {
+            let externallyUncheckable = sparkleFailures.filter {
+                $0.message == SparkleUpdateChecker.invalidFeedConfigurationMessage ||
+                $0.message == SparkleUpdateChecker.invalidSigningConfigurationMessage
+            }
+            for failure in externallyUncheckable {
+                managedOverrides[failure.appPath.standardizedFileURL] = ManagedUpdateMechanism(
+                    title: String(localized: "Built-in Sparkle updater"),
+                    description: String(localized: "This app's Sparkle feed can only be checked safely from inside the app.")
+                )
+            }
+            scanFailuresBySource[.sparkle] = sparkleFailures.filter {
+                $0.message != SparkleUpdateChecker.invalidFeedConfigurationMessage &&
+                $0.message != SparkleUpdateChecker.invalidSigningConfigurationMessage
+            }
+        }
+
+        let pathsWithReportedUpdates = Set(
+            updatesBySource.values
+                .flatMap { $0 }
+                .filter { $0.source != .managed && $0.source != .unsupported && $0.source != .current }
+                .map { $0.appInfo.path.standardizedFileURL }
+        )
+
+        let managedApps = apps.compactMap { app -> UpdateableApp? in
+            let path = app.path.standardizedFileURL
+            guard !pathsWithReportedUpdates.contains(path),
+                  let mechanism = managedOverrides[path] ?? ManagedUpdateDetector.mechanism(for: app) else {
+                return nil
+            }
+
+            return UpdateableApp(
+                appInfo: app,
+                availableVersion: nil,
+                availableBuildNumber: nil,
+                source: .managed,
+                adamID: nil,
+                appStoreURL: nil,
+                status: .idle,
+                progress: 0,
+                isSelectedForUpdate: false,
+                releaseTitle: mechanism.title,
+                releaseDescription: mechanism.description,
+                releaseNotesLink: nil,
+                releaseDate: nil,
+                isPreRelease: false,
+                isIOSApp: false,
+                foundInRegion: nil,
+                appcastItem: nil
+            )
+        }
+
+        await processSourceResults(source: .managed, apps: managedApps)
+
         // Calculate unsupported apps (always calculate - it's instant, toggle only controls UI visibility)
         let unsupportedApps = apps.filter { app in
             // Not a web app (web apps update with browser)
@@ -593,7 +675,11 @@ class UpdateManager: ObservableObject {
             // Not a Homebrew cask/formula
             app.cask == nil &&
             // Doesn't have Sparkle
-            !app.hasSparkle
+            !app.hasSparkle &&
+            // No Electron metadata, even when the provider must run in-app
+            !ElectronUpdateChecker.hasUpdateMetadata(for: app) &&
+            // No known vendor-managed updater
+            ManagedUpdateDetector.mechanism(for: app) == nil
         }.map { app in
             // Create UpdateableApp with unsupported source
             UpdateableApp(
@@ -688,6 +774,9 @@ class UpdateManager: ObservableObject {
         }
         if checkSparkle, app.hasSparkle, !app.isAppStore {
             applicableSources.append(.sparkle)
+        }
+        if checkElectron, ElectronUpdateChecker.isEligible(app) {
+            applicableSources.append(.electron)
         }
 
         guard !applicableSources.isEmpty else { return false }
@@ -912,6 +1001,33 @@ class UpdateManager: ObservableObject {
                 )
                 UpdateQueue.shared.addOperation(operation)
             }
+
+        case .electron:
+            guard let rawURL = app.externalURL,
+                  let url = URL(string: rawURL),
+                  url.scheme?.lowercased() == "https",
+                  NSWorkspace.shared.open(url) else {
+                let message = "Could not open this app's official update page"
+                updateStatus(for: app, status: .failed(message), progress: 0)
+                GlobalConsoleManager.shared.appendOutput("✗ \(message): \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
+                return
+            }
+            GlobalConsoleManager.shared.appendOutput(
+                "Opened the official Electron update page for \(app.appInfo.appName).\n",
+                source: CurrentPage.updater.title
+            )
+
+        case .managed:
+            guard NSWorkspace.shared.open(app.appInfo.path) else {
+                let message = "Could not open this app"
+                updateStatus(for: app, status: .failed(message), progress: 0)
+                GlobalConsoleManager.shared.appendOutput("✗ \(message): \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
+                return
+            }
+            GlobalConsoleManager.shared.appendOutput(
+                "Opened \(app.appInfo.appName). Use its built-in updater to check for updates.\n",
+                source: CurrentPage.updater.title
+            )
 
         case .unsupported:
             // Unsupported apps cannot be updated - do nothing

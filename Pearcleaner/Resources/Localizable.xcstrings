@@ -28058,6 +28058,36 @@
         }
       }
     },
+    "Electron" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Electron"
+          }
+        }
+      }
+    },
+    "External" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部更新"
+          }
+        }
+      }
+    },
+    "External Update" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部更新"
+          }
+        }
+      }
+    },
     "End Date" : {
       "localizations" : {
         "de" : {
@@ -52882,6 +52912,16 @@
         }
       }
     },
+    "Open App" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 App"
+          }
+        }
+      }
+    },
     "Open in Finder" : {
       "localizations" : {
         "de" : {
@@ -70610,6 +70650,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "所選項目:"
+          }
+        }
+      }
+    },
+    "Self-Updating" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自行更新"
           }
         }
       }

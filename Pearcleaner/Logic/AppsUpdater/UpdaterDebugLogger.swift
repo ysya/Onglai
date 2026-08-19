@@ -17,6 +17,7 @@ class UpdaterDebugLogger: ObservableObject {
     @Published private(set) var appStoreLogs: [String] = []
     @Published private(set) var sparkleLogs: [String] = []
     @Published private(set) var homebrewLogs: [String] = []
+    @Published private(set) var electronLogs: [String] = []
 
     private init() {}
 
@@ -40,7 +41,9 @@ class UpdaterDebugLogger: ObservableObject {
                 self?.sparkleLogs.append(logLine)
             case .homebrew:
                 self?.homebrewLogs.append(logLine)
-            case .unsupported:
+            case .electron:
+                self?.electronLogs.append(logLine)
+            case .managed, .unsupported:
                 // No logs for unsupported apps (they don't have updates to debug)
                 break
             case .current:
@@ -50,7 +53,7 @@ class UpdaterDebugLogger: ObservableObject {
         }
     }
 
-    /// Generate formatted debug output with all three sources
+    /// Generate formatted debug output with all update sources
     func generateDebugReport() -> String {
         var report = ""
 
@@ -67,6 +70,19 @@ class UpdaterDebugLogger: ObservableObject {
             report += "  (No logs recorded)\n"
         } else {
             for log in appStoreLogs {
+                report += "  \(log)\n"
+            }
+        }
+        report += "\n"
+
+        // Electron Section
+        report += "━" + String(repeating: "━", count: 78) + "\n"
+        report += "ELECTRON UPDATE CHECKER\n"
+        report += "━" + String(repeating: "━", count: 78) + "\n"
+        if electronLogs.isEmpty {
+            report += "  (No logs recorded)\n"
+        } else {
+            for log in electronLogs {
                 report += "  \(log)\n"
             }
         }
@@ -111,11 +127,12 @@ class UpdaterDebugLogger: ObservableObject {
             self?.appStoreLogs.removeAll()
             self?.sparkleLogs.removeAll()
             self?.homebrewLogs.removeAll()
+            self?.electronLogs.removeAll()
         }
     }
 
     /// Check if any logs exist
     var hasLogs: Bool {
-        !appStoreLogs.isEmpty || !sparkleLogs.isEmpty || !homebrewLogs.isEmpty
+        !appStoreLogs.isEmpty || !sparkleLogs.isEmpty || !homebrewLogs.isEmpty || !electronLogs.isEmpty
     }
 }

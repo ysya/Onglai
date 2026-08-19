@@ -40,6 +40,17 @@ struct UpdaterSourcesSettings: AppStorageCodable {
     var homebrew: HomebrewSettings = HomebrewSettings()
     var sparkle: SparkleSettings = SparkleSettings()
     var appStore: AppStoreSettings = AppStoreSettings()
+    var electron: ElectronSettings = ElectronSettings()
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        homebrew = try container.decodeIfPresent(HomebrewSettings.self, forKey: .homebrew) ?? HomebrewSettings()
+        sparkle = try container.decodeIfPresent(SparkleSettings.self, forKey: .sparkle) ?? SparkleSettings()
+        appStore = try container.decodeIfPresent(AppStoreSettings.self, forKey: .appStore) ?? AppStoreSettings()
+        electron = try container.decodeIfPresent(ElectronSettings.self, forKey: .electron) ?? ElectronSettings()
+    }
 
     struct HomebrewSettings: Codable {
         var enabled: Bool = true
@@ -54,10 +65,24 @@ struct UpdaterSourcesSettings: AppStorageCodable {
     struct AppStoreSettings: Codable {
         var enabled: Bool = true
     }
+
+    struct ElectronSettings: Codable {
+        var enabled: Bool = true
+    }
 }
 
 // MARK: - Display Settings
 struct UpdaterDisplaySettings: AppStorageCodable {
     var showUnsupported: Bool = true
     var showCurrent: Bool = true
+    var showManaged: Bool = true
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        showUnsupported = try container.decodeIfPresent(Bool.self, forKey: .showUnsupported) ?? true
+        showCurrent = try container.decodeIfPresent(Bool.self, forKey: .showCurrent) ?? true
+        showManaged = try container.decodeIfPresent(Bool.self, forKey: .showManaged) ?? true
+    }
 }

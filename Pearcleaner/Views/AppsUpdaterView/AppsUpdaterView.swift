@@ -46,6 +46,7 @@ struct AppsUpdaterView: View {
         updateManager.appCentricItems.filter { item in
             switch item.section {
             case .current: return display.showCurrent
+            case .managed: return display.showManaged
             case .unsupported: return display.showUnsupported
             default: return true
             }
@@ -75,11 +76,14 @@ struct AppsUpdaterView: View {
     private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
         var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
             (String(localized: "Update Available"), { $0.section == .available }, true, updateManager.scanningSources.contains(.homebrew) || updateManager.scanningSources.contains(.sparkle)),
-            (String(localized: "Update in App Store"), { $0.section == .external }, true, updateManager.scanningSources.contains(.appStore)),
+            (String(localized: "External Update"), { $0.section == .external }, true, updateManager.scanningSources.contains(.appStore) || updateManager.scanningSources.contains(.electron)),
             (String(localized: "Error"), { $0.section == .attention }, true, false)
         ]
         if display.showCurrent {
             cats.append((String(localized: "Current"), { $0.section == .current }, false, false))
+        }
+        if display.showManaged {
+            cats.append((String(localized: "Self-Updating"), { $0.section == .managed }, false, false))
         }
         if display.showUnsupported {
             cats.append((String(localized: "Unsupported"), { $0.section == .unsupported }, false, false))
@@ -336,7 +340,7 @@ private struct UpdaterOverviewView: View {
                         tint: .blue
                     )
                     UpdaterSummaryCard(
-                        title: "App Store",
+                        title: "External",
                         count: externalUpdateCount,
                         systemImage: "macwindow",
                         tint: .purple
@@ -403,6 +407,7 @@ private struct UpdaterOverviewView: View {
                         Label("App Store", systemImage: "macwindow")
                         Label("Homebrew", systemImage: "terminal")
                         Label("Sparkle", systemImage: "sparkles")
+                        Label("Electron", systemImage: "bolt.fill")
                     }
                 }
                 .font(.callout)
@@ -510,6 +515,8 @@ private struct UpdateFailureDetailView: View {
         case .homebrew: return "terminal"
         case .appStore: return "macwindow"
         case .sparkle: return "sparkles"
+        case .electron: return "bolt.fill"
+        case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"
         }

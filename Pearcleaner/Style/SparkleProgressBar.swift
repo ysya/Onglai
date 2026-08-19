@@ -24,6 +24,10 @@ struct SparkleProgressBar: View {
             return ["cart", "cart.fill", "storefront", "storefront.fill"]
         case .sparkle:
             return ["star", "star.fill", "sparkle", "sparkles", "sparkles.2"]
+        case .electron:
+            return ["bolt", "bolt.fill", "sparkle", "sparkles"]
+        case .managed:
+            return ["arrow.up.forward.app", "arrow.triangle.2.circlepath", "sparkle"]
         case .homebrew, .unsupported, .current:
             return ["star", "star.fill", "sparkle", "sparkles", "sparkles.2"]
         }

@@ -235,6 +235,31 @@ struct UpdaterSourceCheckboxSection: View {
 
             }
 
+            Toggle(isOn: Binding(
+                get: { sources.electron.enabled },
+                set: { newValue in
+                    sources.electron.enabled = newValue
+                    if newValue {
+                        Task { await updateManager.scanIfNeeded(sources: [.electron]) }
+                    } else {
+                        updateManager.updatesBySource[.electron] = nil
+                    }
+                }
+            )) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                        .font(.caption)
+                        .frame(width: 16)
+
+                    Text("Electron")
+                        .font(.caption)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                }
+            }
+            .toggleStyle(CircleCheckboxToggleStyle())
+            .help("Check Electron update manifests without installing downloads automatically")
+
             // Current apps toggle
             Toggle(isOn: Binding(
                 get: { display.showCurrent },
@@ -255,6 +280,24 @@ struct UpdaterSourceCheckboxSection: View {
             }
             .toggleStyle(CircleCheckboxToggleStyle())
             .help("Show apps that are already up-to-date")
+
+            Toggle(isOn: Binding(
+                get: { display.showManaged },
+                set: { display.showManaged = $0 }
+            )) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.forward.app")
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                        .font(.caption)
+                        .frame(width: 16)
+
+                    Text("Self-Updating")
+                        .font(.caption)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                }
+            }
+            .toggleStyle(CircleCheckboxToggleStyle())
+            .help("Show apps managed by a built-in or vendor updater")
 
             // Unsupported apps toggle
             Toggle(isOn: Binding(
@@ -406,7 +449,9 @@ struct UpdaterHiddenAppsSection: View {
     private func hideApp(_ appInfo: AppInfo) {
         // Determine the update source for this app
         let source: UpdateSource = {
-            if appInfo.hasSparkle {
+            if ManagedUpdateDetector.mechanism(for: appInfo) != nil {
+                return .managed
+            } else if appInfo.hasSparkle {
                 return .sparkle
             } else if appInfo.brew {
                 return .homebrew
@@ -454,6 +499,8 @@ struct UpdaterHiddenAppRow: View {
         case .appStore: return ifOSBelow(macOS: 14) ? "cart.fill" : "storefront.fill"
         case .homebrew: return "mug"
         case .sparkle: return "sparkles"
+        case .electron: return "bolt.fill"
+        case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"
         }
@@ -464,6 +511,8 @@ struct UpdaterHiddenAppRow: View {
         case .appStore: return .blue
         case .homebrew: return .orange
         case .sparkle: return .purple
+        case .electron: return .yellow
+        case .managed: return .blue
         case .unsupported: return .gray
         case .current: return .green
         }

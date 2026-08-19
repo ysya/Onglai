@@ -50,6 +50,10 @@ struct UpdateDetailView: View {
             return .purple
         case .sparkle:
             return .orange
+        case .electron:
+            return .yellow
+        case .managed:
+            return .blue
         case .unsupported:
             return .gray
         case .current:
@@ -171,6 +175,13 @@ struct UpdateDetailView: View {
                                     .help("Unsupported")
                             }
 
+                            if app.source == .managed {
+                                Image(systemName: "arrow.up.forward.app.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.blue)
+                                    .help("Managed by the app or its vendor")
+                            }
+
                             Spacer()
 
                             HStack(spacing: 8) {
@@ -204,6 +215,10 @@ struct UpdateDetailView: View {
             // Unsupported apps: Show inline adoption view
             if app.source == .unsupported {
                 unsupportedContentView(for: app)
+                    .id(app.id)
+            }
+            else if app.source == .managed {
+                managedContentView(for: app)
                     .id(app.id)
             }
             // Current apps: Show simple "up to date" message
@@ -417,7 +432,8 @@ struct UpdateDetailView: View {
                 Task { await updateManager.updateApp(app) }
             }
         } label: {
-            Text(app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
+            Text(app.source == .electron ? "View Update" :
+                 app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
@@ -472,6 +488,31 @@ struct UpdateDetailView: View {
                 secondaryActions: secondaryActions
             )
         }
+        // Vendor-managed apps: open the app's own updater, with Hide available.
+        else if app.source == .managed {
+            let primaryAction = ActionButtonItem(
+                title: "Open App",
+                foregroundColor: .white,
+                backgroundColor: .blue,
+                action: {
+                    Task { await updateManager.updateApp(app) }
+                }
+            )
+
+            let hideAction = ActionButtonItem(
+                title: "Hide",
+                foregroundColor: .red,
+                backgroundColor: ThemeColors.shared(for: colorScheme).secondaryBG,
+                action: {
+                    updateManager.hideApp(app, skipVersion: nil)
+                }
+            )
+
+            return ExpandableActionButton(
+                primaryAction: primaryAction,
+                secondaryActions: [hideAction]
+            )
+        }
         // Unsupported apps: Hide only (no dropdown)
         else if app.source == .unsupported {
             let primaryAction = ActionButtonItem(
@@ -491,10 +532,11 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
+                title: app.source == .electron ? "View Update" :
+                       app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
                 foregroundColor: .white,
                 backgroundColor: .green,
-                isDisabled: app.status != .idle,
+                isDisabled: app.status != .idle || (app.source == .electron && app.externalURL == nil),
                 action: {
                     if app.isIOSApp, let appStoreURL = app.appStoreURL {
                         openInAppStore(urlString: appStoreURL)
@@ -906,6 +948,36 @@ struct UpdateDetailView: View {
     }
 
     // MARK: - Unsupported App Content View
+
+    @ViewBuilder
+    private func managedContentView(for app: UpdateableApp) -> some View {
+        VStack(spacing: 18) {
+            Spacer()
+
+            Image(systemName: "arrow.up.forward.app.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.blue)
+
+            Text(verbatim: app.releaseTitle ?? String(localized: "Built-in updater"))
+                .font(.title2.bold())
+                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+
+            Text(verbatim: app.releaseDescription ?? String(localized: "Open this app to check for and install updates."))
+                .font(.body)
+                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 520)
+
+            Button("Open App") {
+                Task { await updateManager.updateApp(app) }
+            }
+            .buttonStyle(.borderedProminent)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
 
     @ViewBuilder
     private func unsupportedContentView(for app: UpdateableApp) -> some View {
