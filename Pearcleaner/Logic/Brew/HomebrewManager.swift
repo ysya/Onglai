@@ -484,103 +484,110 @@ class HomebrewManager: ObservableObject {
         isLoadingAvailablePackages = true
         defer { isLoadingAvailablePackages = false }
 
-        do {
-            // Update Homebrew first to ensure JWS files are up to date
-            if forceRefresh {
+        // Update Homebrew first to ensure local metadata is up to date.
+        if forceRefresh {
+            do {
                 try await HomebrewController.shared.updateBrew()
+            } catch {
+                printOS("Error updating Homebrew metadata: \(error)")
             }
+        }
 
-            // Load both JWS files in parallel (~0.63s total from earlier test)
-            async let formulaeMetadata = HomebrewController.shared.loadMinimalPackageMetadata(cask: false)
-            async let casksMetadata = HomebrewController.shared.loadMinimalPackageMetadata(cask: true)
+        // Load both catalogues independently so one missing cache does not hide the other.
+        async let formulaeMetadata = loadAvailableMetadata(cask: false)
+        async let casksMetadata = loadAvailableMetadata(cask: true)
 
-            let (formulae, casks) = try await (formulaeMetadata, casksMetadata)
+        let (formulae, casks) = await (formulaeMetadata, casksMetadata)
 
-            // Convert to SearchResult objects with displayName, description, and version
-            // Sort once here to avoid sorting on every search keystroke
-            allAvailableFormulae = formulae.map { (name, displayName, description, version, _) in
-                HomebrewSearchResult(
-                    name: name,
-                    displayName: displayName,
-                    description: description,
-                    homepage: nil,
-                    license: nil,
-                    version: version,
-                    dependencies: nil,
-                    caveats: nil,
-                    tap: nil,
-                    fullName: nil,
-                    isDeprecated: false,
-                    deprecationReason: nil,
-                    deprecationDate: nil,
-                    isDisabled: false,
-                    disableDate: nil,
-                    disableReason: nil,
-                    conflictsWith: nil,
-                    conflictsWithReasons: nil,
-                    isBottled: nil,
-                    isKegOnly: nil,
-                    kegOnlyReason: nil,
-                    buildDependencies: nil,
-                    optionalDependencies: nil,
-                    recommendedDependencies: nil,
-                    usesFromMacos: nil,
-                    aliases: nil,
-                    versionedFormulae: nil,
-                    requirements: nil,
-                    caskName: nil,
-                    autoUpdates: nil,
-                    artifacts: nil,
-                    url: nil,
-                    appcast: nil
-                )
-            }.sorted { ($0.displayName ?? $0.name).sortKey < ($1.displayName ?? $1.name).sortKey }
+        // Convert to SearchResult objects and sort once to avoid repeated search-time sorting.
+        allAvailableFormulae = formulae.map { metadata in
+            HomebrewSearchResult(
+                name: metadata.name,
+                displayName: metadata.displayName,
+                description: metadata.description,
+                homepage: metadata.homepage,
+                license: nil,
+                version: metadata.version,
+                dependencies: nil,
+                caveats: nil,
+                tap: nil,
+                fullName: nil,
+                isDeprecated: metadata.isDeprecated,
+                deprecationReason: nil,
+                deprecationDate: nil,
+                isDisabled: metadata.isDisabled,
+                disableDate: nil,
+                disableReason: nil,
+                conflictsWith: nil,
+                conflictsWithReasons: nil,
+                isBottled: nil,
+                isKegOnly: nil,
+                kegOnlyReason: nil,
+                buildDependencies: nil,
+                optionalDependencies: nil,
+                recommendedDependencies: nil,
+                usesFromMacos: nil,
+                aliases: nil,
+                versionedFormulae: nil,
+                requirements: nil,
+                caskName: nil,
+                autoUpdates: nil,
+                artifacts: nil,
+                url: nil,
+                appcast: nil
+            )
+        }.sorted { ($0.displayName ?? $0.name).sortKey < ($1.displayName ?? $1.name).sortKey }
 
-            allAvailableCasks = casks.map { (name, displayName, description, version, _) in
-                HomebrewSearchResult(
-                    name: name,
-                    displayName: displayName,
-                    description: description,
-                    homepage: nil,
-                    license: nil,
-                    version: version,
-                    dependencies: nil,
-                    caveats: nil,
-                    tap: nil,
-                    fullName: nil,
-                    isDeprecated: false,
-                    deprecationReason: nil,
-                    deprecationDate: nil,
-                    isDisabled: false,
-                    disableDate: nil,
-                    disableReason: nil,
-                    conflictsWith: nil,
-                    conflictsWithReasons: nil,
-                    isBottled: nil,
-                    isKegOnly: nil,
-                    kegOnlyReason: nil,
-                    buildDependencies: nil,
-                    optionalDependencies: nil,
-                    recommendedDependencies: nil,
-                    usesFromMacos: nil,
-                    aliases: nil,
-                    versionedFormulae: nil,
-                    requirements: nil,
-                    caskName: nil,
-                    autoUpdates: nil,
-                    artifacts: nil,
-                    url: nil,
-                    appcast: nil
-                )
-            }.sorted { ($0.displayName ?? $0.name).sortKey < ($1.displayName ?? $1.name).sortKey }
+        allAvailableCasks = casks.map { metadata in
+            HomebrewSearchResult(
+                name: metadata.name,
+                displayName: metadata.displayName,
+                description: metadata.description,
+                homepage: metadata.homepage,
+                license: nil,
+                version: metadata.version,
+                dependencies: nil,
+                caveats: nil,
+                tap: nil,
+                fullName: nil,
+                isDeprecated: metadata.isDeprecated,
+                deprecationReason: nil,
+                deprecationDate: nil,
+                isDisabled: metadata.isDisabled,
+                disableDate: nil,
+                disableReason: nil,
+                conflictsWith: nil,
+                conflictsWithReasons: nil,
+                isBottled: nil,
+                isKegOnly: nil,
+                kegOnlyReason: nil,
+                buildDependencies: nil,
+                optionalDependencies: nil,
+                recommendedDependencies: nil,
+                usesFromMacos: nil,
+                aliases: nil,
+                versionedFormulae: nil,
+                requirements: nil,
+                caskName: metadata.displayName.map { [$0] },
+                autoUpdates: metadata.autoUpdates,
+                artifacts: metadata.artifacts,
+                url: nil,
+                appcast: nil
+            )
+        }.sorted { ($0.displayName ?? $0.name).sortKey < ($1.displayName ?? $1.name).sortKey }
 
-            // Populate availableByCategory dictionary
-            availableByCategory[.formulae] = allAvailableFormulae
-            availableByCategory[.casks] = allAvailableCasks
+        availableByCategory[.formulae] = allAvailableFormulae
+        availableByCategory[.casks] = allAvailableCasks
 
-            hasLoadedAvailablePackages = true
+        hasLoadedAvailablePackages = true
+    }
+
+    private func loadAvailableMetadata(cask: Bool) async -> [HomebrewPackageMetadata] {
+        do {
+            return try await HomebrewController.shared.loadMinimalPackageMetadata(cask: cask)
         } catch {
-            printOS("Error loading package metadata: \(error)")
+            printOS("Error loading available \(cask ? "casks" : "formulae"): \(error)")
+            return []
         }
     }
 }

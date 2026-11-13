@@ -459,89 +459,72 @@ class HomebrewController: ObservableObject {
         }
     }
 
-    /// Load minimal package metadata (name, displayName, description, version) from local JWS files
-    /// Much faster than API calls and works offline
-    /// JWS files are already cached by Homebrew after `brew update`
-    func loadMinimalPackageMetadata(cask: Bool) async throws -> [(name: String, displayName: String?, description: String?, version: String?, bundleVersion: String?)] {
+    /// Load package metadata from Homebrew's local API cache.
+    /// Supports both legacy per-category JWS files and Homebrew 7's internal archive.
+    func loadMinimalPackageMetadata(cask: Bool) async throws -> [HomebrewPackageMetadata] {
         await MainActor.run {
             GlobalConsoleManager.shared.appendOutput("Loading available \(cask ? "casks" : "formulae") metadata...\n", source: CurrentPage.homebrew.title)
         }
 
-        let fileName = cask ? "cask.jws.json" : "formula.jws.json"
+        let fileManager = FileManager.default
         let apiCachePath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/Homebrew/api")
-        let jwsFilePath = apiCachePath.appendingPathComponent(fileName).path
+        let legacyFileName = cask ? "cask.jws.json" : "formula.jws.json"
+        let legacyURL = apiCachePath.appendingPathComponent(legacyFileName)
+        var cacheURLs: [URL] = []
 
-        guard FileManager.default.fileExists(atPath: jwsFilePath) else {
-            throw HomebrewError.commandFailed("JWS file not found: \(fileName). Run 'brew update' first.")
+        if fileManager.fileExists(atPath: legacyURL.path) {
+            cacheURLs.append(legacyURL)
         }
 
-        // Read JWS file
-        let jwsContent = try String(contentsOfFile: jwsFilePath, encoding: .utf8)
+        let internalCacheURL = apiCachePath.appendingPathComponent("internal", isDirectory: true)
+        if let internalArchives = try? fileManager.contentsOfDirectory(
+            at: internalCacheURL,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            let newestArchive = internalArchives
+                .filter {
+                    $0.lastPathComponent.hasPrefix("packages.") &&
+                    $0.lastPathComponent.hasSuffix(".jws.json")
+                }
+                .sorted {
+                    let left = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    let right = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    return left > right
+                }
+                .first
 
-        // Parse JWS structure: {"payload": "json-string-array", "signatures": [...]}
-        // Note: payload is NOT base64-encoded, it's a plain JSON string
-        guard let jwsData = jwsContent.data(using: .utf8),
-              let jwsJson = try JSONSerialization.jsonObject(with: jwsData) as? [String: Any],
-              let payloadString = jwsJson["payload"] as? String,
-              let payloadData = payloadString.data(using: .utf8),
-              let payloadArray = try JSONSerialization.jsonObject(with: payloadData) as? [[String: Any]] else {
-            throw HomebrewError.jsonParseError
-        }
-
-        var results: [(name: String, displayName: String?, description: String?, version: String?, bundleVersion: String?)] = []
-
-        // Extract package metadata from array
-        for packageDict in payloadArray {
-            let name: String
-            let displayName: String?
-            let description = packageDict["desc"] as? String
-            let version: String?
-            let bundleVersion: String?
-
-            if cask {
-                // Casks: token is brew ID, name is array with display name
-                guard let token = packageDict["token"] as? String else { continue }
-                name = token
-                let nameArray = packageDict["name"] as? [String]
-                displayName = nameArray?.first
-
-                // Extract version with OS-specific variation support
-                let rawVersion = packageDict["version"] as? String
-                bundleVersion = packageDict["bundle_version"] as? String
-
-                // Check for OS-specific version in variations
-                let osCodename = getCurrentOSCodename()
-                #if arch(arm64)
-                let isArm = true
-                #else
-                let isArm = false
-                #endif
-
-                version = extractVersionFromVariations(
-                    json: packageDict,
-                    baseVersion: rawVersion,
-                    osCodename: osCodename,
-                    isArm: isArm
-                )
-            } else {
-                // Formulae: name is brew ID (no separate display name)
-                guard let formulaName = packageDict["name"] as? String else { continue }
-                name = formulaName
-                displayName = nil  // Formulae don't have separate display names
-                version = (packageDict["versions"] as? [String: Any])?["stable"] as? String
-                bundleVersion = nil  // Formulae don't have bundle versions
+            if let newestArchive, !cacheURLs.contains(newestArchive) {
+                cacheURLs.append(newestArchive)
             }
-
-            results.append((name: name, displayName: displayName, description: description, version: version, bundleVersion: bundleVersion))
         }
 
-        let resultsCount = results.count
+        let kind: HomebrewPackageKind = cask ? .cask : .formula
+        for cacheURL in cacheURLs {
+            do {
+                let metadata = try HomebrewPackageMetadataParser.parseJWS(
+                    Data(contentsOf: cacheURL),
+                    kind: kind
+                )
+                guard !metadata.isEmpty else { continue }
+                await logLoadedPackageMetadata(metadata.count, cask: cask)
+                return metadata
+            } catch {
+                printOS("Failed to read Homebrew metadata cache \(cacheURL.lastPathComponent): \(error)")
+            }
+        }
+
+        let names = try await loadPackageNames(cask: cask)
+        let metadata = names.map { HomebrewPackageMetadata(name: $0) }
+        await logLoadedPackageMetadata(metadata.count, cask: cask)
+        return metadata
+    }
+
+    private func logLoadedPackageMetadata(_ count: Int, cask: Bool) async {
         await MainActor.run {
-            GlobalConsoleManager.shared.appendOutput("Loaded \(resultsCount) available \(cask ? "casks" : "formulae")\n", source: CurrentPage.homebrew.title)
+            GlobalConsoleManager.shared.appendOutput("Loaded \(count) available \(cask ? "casks" : "formulae")\n", source: CurrentPage.homebrew.title)
         }
-
-        return results
     }
 
     /// Load package names from text files (formula_names.txt or cask_names.txt)
