@@ -78,25 +78,24 @@ func flushBundleCache(for path: URL) {
 /// Apps stream into AppState.shared.sortedApps progressively as chunks complete
 /// - Parameter useStreaming: If true, uses two-phase streaming (fast initial load). If false, loads full AppInfo immediately.
 func loadApps(folderPaths: [String], useStreaming: Bool = false) {
-    // Clear array immediately before loading
     Task { @MainActor in
-        AppState.shared.sortedApps = []
-    }
+        AppLoadCoordinator.start(
+            clear: { AppState.shared.sortedApps = [] },
+            load: {
+                // getSortedApps streams results or returns the full array.
+                let apps = getSortedApps(paths: folderPaths, useStreaming: useStreaming)
 
-    DispatchQueue.global(qos: .userInitiated).async {
-        // getSortedApps now streams results to AppState.shared.sortedApps (or returns full array if not streaming)
-        let apps = getSortedApps(paths: folderPaths, useStreaming: useStreaming)
+                if !useStreaming {
+                    Task { @MainActor in
+                        AppState.shared.sortedApps = apps
+                    }
+                }
 
-        // If not streaming, update AppState with sorted results
-        if !useStreaming {
-            Task { @MainActor in
-                AppState.shared.sortedApps = apps
+                Task { @MainActor in
+                    AppState.shared.restoreZombieAssociations()
+                }
             }
-        }
-
-        Task { @MainActor in
-            AppState.shared.restoreZombieAssociations()
-        }
+        )
     }
 }
 
