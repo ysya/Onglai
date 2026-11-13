@@ -1340,7 +1340,7 @@
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 2.8.0;
+				minimumVersion = 2.10.1;
 			};
 		};
 		C7736E4D2C49A44200917293 /* XCRemoteSwiftPackageReference "AlinFoundation" */ = {
@@ -1356,7 +1356,7 @@
 			repositoryURL = "https://github.com/apple/swift-argument-parser.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.5.0;
+				minimumVersion = 1.8.2;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

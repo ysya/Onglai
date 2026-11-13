@@ -222,7 +222,10 @@ git add Pearcleaner.xcodeproj/project.pbxproj
 git commit -m "chore: release ${VERSION} (build ${BUILD})"
 COMMITTED=1
 COMMIT_SHA=$(git rev-parse HEAD)
-git push origin main
+echo "Outgoing commits:"
+git log --oneline origin/main..HEAD
+python3 "$HOME/.codex/git-hooks/pre-push" --check
+git -c "core.hooksPath=$HOME/.codex/git-hooks" push origin main
 
 # Upload everything into a draft first. A failed upload never leaves users with
 # a public tag that has no usable artifact.

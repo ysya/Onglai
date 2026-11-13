@@ -20,6 +20,18 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version
 
+      - name: Test
+        run: |
+          xcodebuild \
+            -project Pearcleaner.xcodeproj \
+            -scheme "Pearcleaner Debug" \
+            -configuration Debug \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath build-tests \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet \
+            test
+
       # Compile-and-link check only. Code signing is skipped because the app
       # group entitlement is team-restricted and CI has no signing identity;
       # signed, notarizable builds still come from scripts/release.sh.
