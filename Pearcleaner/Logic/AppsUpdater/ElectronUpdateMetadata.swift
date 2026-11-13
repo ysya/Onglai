@@ -10,6 +10,7 @@ struct ElectronUpdateConfiguration: Equatable {
         case generic(baseURL: URL)
         case github(owner: String, repository: String)
         case s3(baseURL: URL)
+        case spaces(baseURL: URL)
         case unsupported(name: String)
     }
 
@@ -22,7 +23,7 @@ struct ElectronUpdateConfiguration: Equatable {
 
     var manifestURL: URL? {
         switch provider {
-        case .generic(let baseURL), .s3(let baseURL):
+        case .generic(let baseURL), .s3(let baseURL), .spaces(let baseURL):
             return baseURL.appendingPathComponent(manifestName)
         case .github, .unsupported:
             return nil
@@ -31,7 +32,7 @@ struct ElectronUpdateConfiguration: Equatable {
 
     var fallbackExternalURL: URL? {
         switch provider {
-        case .generic(let baseURL), .s3(let baseURL):
+        case .generic(let baseURL), .s3(let baseURL), .spaces(let baseURL):
             return baseURL
         case .github(let owner, let repository):
             return URL(string: "https://github.com/\(owner)/\(repository)/releases")
@@ -121,6 +122,27 @@ enum ElectronUpdateMetadataParser {
                 throw ElectronUpdateMetadataError.invalidProviderConfiguration(providerName)
             }
             provider = .s3(baseURL: directoryURL(baseURL))
+
+        case "spaces":
+            guard let name = nonEmpty(values["name"]),
+                  let region = nonEmpty(values["region"]),
+                  isValidSpacesName(name),
+                  isValidSpacesRegion(region) else {
+                throw ElectronUpdateMetadataError.invalidProviderConfiguration(providerName)
+            }
+
+            if values["acl"]?.lowercased() == "private" {
+                provider = .unsupported(name: providerName)
+                break
+            }
+
+            guard let endpoint = URL(
+                string: "https://\(name.lowercased()).\(region.lowercased()).digitaloceanspaces.com"
+            ) else {
+                throw ElectronUpdateMetadataError.invalidProviderConfiguration(providerName)
+            }
+            let baseURL = appendingPathComponents([values["path"]], to: endpoint)
+            provider = .spaces(baseURL: directoryURL(baseURL))
 
         default:
             provider = .unsupported(name: providerName)
@@ -303,6 +325,20 @@ enum ElectronUpdateMetadataParser {
               url.scheme?.lowercased() == "https",
               url.host?.isEmpty == false else { return nil }
         return url
+    }
+
+    private static func isValidSpacesName(_ value: String) -> Bool {
+        value.range(
+            of: #"^[A-Za-z0-9][A-Za-z0-9-]{2,62}$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func isValidSpacesRegion(_ value: String) -> Bool {
+        value.range(
+            of: #"^[A-Za-z]{3}[0-9]{1,2}$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     private static func resolvedHTTPSURL(_ value: String, relativeTo baseURL: URL) -> URL? {

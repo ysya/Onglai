@@ -84,7 +84,7 @@ enum ElectronUpdateChecker {
         do {
             let metadata: ElectronReleaseMetadata
             switch configuration.provider {
-            case .generic, .s3:
+            case .generic, .s3, .spaces:
                 guard let manifestURL = configuration.manifestURL else {
                     throw ElectronCheckerError.invalidManifestURL
                 }
