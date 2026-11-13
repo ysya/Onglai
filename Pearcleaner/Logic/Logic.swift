@@ -583,6 +583,12 @@ func reloadAppsList(
 // Process CLI // ========================================================================================================
 
 func handleLaunchMode() {
+    // XCTest injects its own launch arguments into the host application.
+    // They are not Onglai CLI commands and must never reach ArgumentParser.
+    if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+        return
+    }
+
     // When the executable runs outside the app bundle (e.g. via the
     // /usr/local/bin/ong symlink), Bundle.main has no Info.plist, so
     // UserDefaults.standard resolves to a domain named after the process
