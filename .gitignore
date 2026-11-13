@@ -92,3 +92,7 @@ iOSInjectionProject/
 Builds/Export
 .claude
 Pearcleaner/Resources/Localizable.xcstrings.bak
+
+# Internal agent and operator artifacts
+/prompts/
+/operator-notes/
