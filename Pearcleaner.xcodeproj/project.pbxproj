@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01A000000000000000000021 /* DeletionSafetyPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000020 /* DeletionSafetyPolicy.swift */; };
 		019FEFEB0000000000000001 /* UserDefaultsTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FEFEB0000000000000002 /* UserDefaultsTransfer.swift */; };
 		C707E2942EAF217200AAD817 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C707E2932EAF217200AAD817 /* Sparkle */; };
 		C71449E52DA826610032B295 /* Lipo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7C90DD22DA81C590056769A /* Lipo.swift */; };
@@ -139,6 +140,7 @@
 
 /* Begin PBXFileReference section */
 		01A000000000000000000011 /* PearcleanerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearcleanerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		01A000000000000000000020 /* DeletionSafetyPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletionSafetyPolicy.swift; sourceTree = "<group>"; };
 		019FEFEB0000000000000002 /* UserDefaultsTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsTransfer.swift; sourceTree = "<group>"; };
 		C7149E782E68DE7E00A15356 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C72893042AFD42E600C8C1CD /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
@@ -317,6 +319,7 @@
 				C77B90152AF19377009CC655 /* AppState.swift */,
 				C7A2A4D52DDB957D006E05E4 /* CLI.swift */,
 				C74FDC622BCD833D00B8960F /* Conditions.swift */,
+				01A000000000000000000020 /* DeletionSafetyPolicy.swift */,
 				C72893042AFD42E600C8C1CD /* DeepLink.swift */,
 				C77020282EA94D0A00240D58 /* FuzzySearch.swift */,
 				C73AE1912EC69A81009CAC42 /* GlobalConsoleManager.swift */,
@@ -731,6 +734,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01A000000000000000000021 /* DeletionSafetyPolicy.swift in Sources */,
 				C78FF5E12EC1A3B400FC610A /* PasswordRequestHandler.swift in Sources */,
 				C7DD49EA2BAB4D8100CCBA16 /* AppInfoFetch.swift in Sources */,
 				C75AED102EC259C800824CCD /* UndoHistoryManager.swift in Sources */,

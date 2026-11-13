@@ -310,7 +310,11 @@ class Locations: ObservableObject {
     // the user-content folders, no matter which scan surfaced the path.
     // Defense in depth against overly fuzzy name matching (upstream issues
     // #553, #587, #571).
-    func isProtectedFromDeletion(_ url: URL) -> Bool {
+    func isProtectedFromDeletion(
+        _ url: URL,
+        targetBundleIdentifier: String? = nil,
+        entitlementIdentifiers: [String] = []
+    ) -> Bool {
         let path = url.standardizedFileURL.path
         if protectedRoots.contains(path) { return true }
         for root in Locations.userContentRoots {
@@ -321,6 +325,10 @@ class Locations: ObservableObject {
             if path.hasSuffix(".app") { continue }
             return true
         }
-        return false
+        return DeletionSafetyPolicy.isProtected(
+            url,
+            targetBundleIdentifier: targetBundleIdentifier,
+            entitlementIdentifiers: entitlementIdentifiers
+        )
     }
 }

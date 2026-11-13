@@ -677,7 +677,13 @@ class AppPathFinder {
 
             // Deletion safety net: never offer protected roots or user-content
             // paths, regardless of which search surfaced them
-            tempCollection.removeAll { self.locations.isProtectedFromDeletion($0) }
+            tempCollection.removeAll {
+                self.locations.isProtectedFromDeletion(
+                    $0,
+                    targetBundleIdentifier: self.appInfo.bundleIdentifier,
+                    entitlementIdentifiers: self.appInfo.entitlements ?? []
+                )
+            }
 
             let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
             var filteredCollection: [URL] = []
@@ -732,7 +738,13 @@ class AppPathFinder {
 
         // Deletion safety net: never offer protected roots or user-content
         // paths, regardless of which search surfaced them
-        tempCollection.removeAll { self.locations.isProtectedFromDeletion($0) }
+        tempCollection.removeAll {
+            self.locations.isProtectedFromDeletion(
+                $0,
+                targetBundleIdentifier: self.appInfo.bundleIdentifier,
+                entitlementIdentifiers: self.appInfo.entitlements ?? []
+            )
+        }
 
         let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
         var filteredCollection: [URL] = []
