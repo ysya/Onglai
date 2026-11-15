@@ -243,13 +243,10 @@ func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
                             autoreleasepool {
                                 let appPath = appURL.path
 
-                                // Use mini version for fast initial load
-                                if let appMetadata = metadataDictionary[appPath] {
-                                    return MetadataAppInfoFetcher.getAppInfoMini(fromMetadata: appMetadata, atPath: appURL)
-                                } else {
-                                    // Fallback to full version if no metadata
-                                    return AppInfoFetcher.getAppInfo(atPath: appURL)?.toMini()
-                                }
+                                return MetadataAppInfoFetcher.getAppInfoMiniForStreaming(
+                                    fromMetadata: metadataDictionary[appPath],
+                                    atPath: appURL
+                                )
                             }
                         }
 

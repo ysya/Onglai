@@ -125,6 +125,23 @@ class MetadataAppInfoFetcher {
 
     // MARK: - Phase 1: Fast Loading with AppInfoMini
 
+    /// Keep startup loading independent of Spotlight metadata availability.
+    static func getAppInfoMiniForStreaming(fromMetadata metadata: [String: Any]?, atPath path: URL) -> AppInfoMini? {
+        if let metadata, let mini = getAppInfoMini(fromMetadata: metadata, atPath: path) {
+            return mini
+        }
+
+        return AppInfoFetcher.getAppInfo(
+            atPath: path,
+            dates: (
+                metadata?["kMDItemFSCreationDate"] as? Date,
+                metadata?["kMDItemFSContentChangeDate"] as? Date,
+                metadata?["kMDItemLastUsedDate"] as? Date,
+                metadata?["kMDItemDateAdded"] as? Date
+            )
+        )?.toMini()
+    }
+
     /// Fast lightweight app info loading for initial display
     /// Skips expensive operations: arch detection, entitlements, cask lookup, team identifier
     /// Always calculates bundleSize (required for sorting)
