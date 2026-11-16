@@ -132,6 +132,98 @@ final class UpdateManagerSourceTests: XCTestCase {
         XCTAssertTrue(manager.isConfirmedCurrent(first))
     }
 
+    func testCatalogueLimitationDoesNotOverrideSuccessfulSparkleCheck() async {
+        let manager = manager()
+        let target = app("editor", sparkle: true)
+        manager.recordSourceEvidence(UpdateCheckResults(currentAppPaths: [target.path]), source: .sparkle)
+        let limitation = UpdateCheckFailure(appPath: target.path, appName: target.appName,
+                                             message: "Version metadata unavailable", kind: .unavailable)
+        manager.recordSourceEvidence(UpdateCheckResults(failures: [limitation]), source: .catalog)
+        await manager.rebuildDerivedResults(apps: [target])
+        XCTAssertTrue(manager.isConfirmedCurrent(target))
+        XCTAssertEqual(manager.appCentricItems.map(\.section), [.current])
+    }
+
+    func testUnavailableVersionUsesManualCheckButNetworkFailureUsesError() {
+        let manager = manager()
+        let target = app("editor")
+        let limitation = UpdateCheckFailure(appPath: target.path, appName: target.appName,
+                                             message: "Version metadata unavailable", kind: .unavailable)
+        manager.recordSourceEvidence(UpdateCheckResults(failures: [limitation]), source: .catalog)
+        XCTAssertEqual(manager.appCentricItems.first?.section, .unverified)
+        XCTAssertFalse(manager.isConfirmedCurrent(target))
+        manager.recordSourceEvidence(UpdateCheckResults(failures: [failure(target)]), source: .catalog)
+        XCTAssertEqual(manager.appCentricItems.first?.section, .attention)
+    }
+
+    func testSkippingVerifiedBuildDoesNotHideANewerBuildOfSameMarketingVersion() async {
+        for (version, olderBuild, newerVersion, newerBuild) in [
+            ("0.4.28+2", "2", "0.4.28+3", "3"),
+            ("2026.3", "263.7307.216", "2026.3", "263.7307.217"),
+            ("27.1.0", "58756", "27.1.0", "58757")
+        ] {
+            let manager = manager()
+            let target = app("editor")
+            var older = update(target, source: .catalog, version: version)
+            older.availableBuildNumber = olderBuild
+            var newer = update(target, source: .catalog, version: newerVersion)
+            newer.availableBuildNumber = newerBuild
+            manager.updatesBySource[.catalog] = [older]
+            manager.hideApp(older, skipVersion: older.availableVersion)
+            await manager.processSourceResults(source: .catalog, apps: [older])
+            XCTAssertTrue(manager.appCentricItems.isEmpty)
+            await manager.processSourceResults(source: .catalog, apps: [newer])
+            XCTAssertEqual(manager.appCentricItems.first?.primaryApp?.availableBuildNumber, newerBuild)
+        }
+    }
+
+    func testSkippingElectronBuildMetadataDoesNotHideNextBuild() async {
+        let manager = manager()
+        let target = app("editor")
+        let older = update(target, source: .electron, version: "0.4.28+2")
+        let newer = update(target, source: .electron, version: "0.4.28+3")
+        manager.updatesBySource[.electron] = [older]
+        manager.hideApp(older, skipVersion: older.availableVersion)
+        await manager.processSourceResults(source: .electron, apps: [newer])
+        XCTAssertEqual(manager.appCentricItems.first?.primaryApp?.availableVersion, "0.4.28+3")
+    }
+
+    func testChangedRuleRevisionInvalidatesAndRescansEveryAffectedSource() {
+        let manager = manager()
+        let current = app("current", sparkle: true)
+        let outdated = app("outdated")
+        let independent = app("independent")
+        manager.recordSourceEvidence(UpdateCheckResults(currentAppPaths: [current.path]), source: .sparkle)
+        manager.recordSourceEvidence(UpdateCheckResults(currentAppPaths: [current.path]), source: .catalog)
+        manager.recordSourceEvidence(UpdateCheckResults(failures: [failure(outdated)]), source: .official)
+        for source in [UpdateSource.sparkle, .official, .catalog] {
+            manager.updatesBySource[source] = [update(outdated, source: source)]
+        }
+        manager.updatesBySource[.homebrew] = [update(independent, source: .homebrew)]
+        XCTAssertTrue(manager.isConfirmedCurrent(current))
+        let unchanged = manager.sourcesAfterRuleRefresh(from: 1, to: 1, requested: [.catalog])
+        XCTAssertEqual(unchanged, [.catalog])
+        XCTAssertTrue(manager.isConfirmedCurrent(current))
+        let requested = manager.sourcesAfterRuleRefresh(from: 1, to: 2, requested: [.catalog])
+        XCTAssertEqual(requested, [.sparkle, .official, .catalog])
+        for source in [UpdateSource.sparkle, .official, .catalog] {
+            XCTAssertNil(manager.updatesBySource[source])
+            XCTAssertNil(manager.scanFailuresBySource[source])
+        }
+        XCTAssertFalse(manager.isConfirmedCurrent(current))
+        XCTAssertEqual(manager.updatesBySource[.homebrew]?.first?.appInfo.path, independent.path)
+    }
+
+    func testInFlightCheckFromOlderRulesCannotRestoreStaleEvidence() {
+        let manager = manager()
+        let target = app("editor")
+        let revision = UpdaterRuleStore.shared.snapshot.revision
+        let accepted = manager.recordSourceEvidence(UpdateCheckResults(currentAppPaths: [target.path]), source: .catalog,
+                                                      checkedRuleRevision: revision - 1)
+        XCTAssertFalse(accepted)
+        XCTAssertFalse(manager.isConfirmedCurrent(target))
+    }
+
     private func manager(ignored: [String: [String: String?]] = [:]) -> UpdateManager {
         let suiteName = "UpdateManagerSourceTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

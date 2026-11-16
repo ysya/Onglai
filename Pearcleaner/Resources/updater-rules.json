@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "sparkleFeeds": [
+    {
+      "bundleIdentifier": "com.openai.codex",
+      "feedURL": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+    },
+    {
+      "bundleIdentifier": "com.mitchellh.ghostty",
+      "feedURL": "https://release.files.ghostty.org/appcast.xml"
+    },
+    {
+      "bundleIdentifier": "io.tailscale.ipn.macsys",
+      "feedURL": "https://pkgs.tailscale.com/stable/appcast.xml"
+    },
+    {
+      "bundleIdentifier": "dev.kdrag0n.MacVirt",
+      "feedURL": "https://api-updates.orbstack.dev/arm64/appcast.xml?bucket=",
+      "architectures": [
+        "arm64"
+      ]
+    },
+    {
+      "bundleIdentifier": "company.thebrowser.dia",
+      "feedURL": "https://releases.diabrowser.com/BoostBrowser-updates.xml"
+    },
+    {
+      "bundleIdentifier": "com.cloudflare.1dot1dot1dot1.macos",
+      "feedURL": "https://downloads.cloudflareclient.com/v1/update/sparkle/macos/ga"
+    }
+  ],
+  "officialSources": [
+    {
+      "bundleIdentifier": "com.microsoft.VSCode",
+      "kind": "json",
+      "endpointTemplate": "https://update.code.visualstudio.com/api/update/{darwinPlatform}/stable/latest",
+      "page": "https://code.visualstudio.com/download",
+      "versionKey": "productVersion",
+      "channelPolicy": "vscodeStable",
+      "allowsNoUpdate204": true
+    },
+    {
+      "bundleIdentifier": "com.todesktop.230313mzl4w4u92",
+      "kind": "json",
+      "endpointTemplate": "https://api2.cursor.sh/updates/api/update/{darwinPlatform}/cursor/0.0.1/stable",
+      "page": "https://cursor.com/download",
+      "versionKey": "name",
+      "channelPolicy": "vscodeStable",
+      "allowsNoUpdate204": true
+    },
+    {
+      "bundleIdentifier": "com.hnc.Discord",
+      "kind": "json",
+      "endpointTemplate": "https://discord.com/api/updates/stable?platform=osx",
+      "page": "https://discord.com/download",
+      "versionKey": "name",
+      "allowsNoUpdate204": true
+    },
+    {
+      "bundleIdentifier": "com.anthropic.claudefordesktop",
+      "kind": "json",
+      "endpointTemplate": "https://api.anthropic.com/api/desktop/darwin/universal/dmg/latest",
+      "page": "https://claude.com/download",
+      "versionKey": "version"
+    },
+    {
+      "bundleIdentifier": "com.postmanlabs.mac",
+      "kind": "json",
+      "endpointTemplate": "https://dl.pstmn.io/api/version/latest",
+      "page": "https://www.postman.com/downloads/",
+      "versionKey": "version"
+    },
+    {
+      "bundleIdentifier": "com.termius-dmg.mac",
+      "kind": "termius",
+      "endpointTemplate": "https://autoupdate.termius.com/{macPlatform}/latest-mac.yml",
+      "page": "https://termius.com/download/macos"
+    },
+    {
+      "bundleIdentifier": "com.linear",
+      "kind": "linear",
+      "endpointTemplate": "https://releases.linear.app/mac",
+      "page": "https://linear.app/download"
+    },
+    {
+      "bundleIdentifier": "me.proton.pass.electron",
+      "kind": "proton",
+      "endpointTemplate": "https://proton.me/download/PassDesktop/darwin/universal/version.json",
+      "page": "https://proton.me/pass/download"
+    },
+    {
+      "bundleIdentifier": "com.jetbrains.rider",
+      "kind": "jetbrains",
+      "endpointTemplate": "https://data.services.jetbrains.com/products/releases?code=RD&latest=true&type=release",
+      "page": "https://www.jetbrains.com/rider/download/",
+      "productCode": "RD",
+      "localProductCode": "RD"
+    },
+    {
+      "bundleIdentifier": "com.jetbrains.toolbox",
+      "kind": "jetbrains",
+      "endpointTemplate": "https://data.services.jetbrains.com/products/releases?code=TBA&type=release",
+      "page": "https://www.jetbrains.com/toolbox-app/",
+      "productCode": "TBA",
+      "usesBuild": true
+    },
+    {
+      "bundleIdentifier": "com.google.android.studio",
+      "kind": "studio",
+      "endpointTemplate": "https://dl.google.com/android/studio/patches/updates.xml",
+      "page": "https://developer.android.com/studio",
+      "usesBuild": true,
+      "channelPolicy": "androidStudioStable"
+    },
+    {
+      "bundleIdentifier": "com.google.Chrome",
+      "kind": "chrome",
+      "endpointTemplate": "https://versionhistory.googleapis.com/v1/chrome/platforms/{chromePlatform}/channels/stable/versions/all/releases?filter=endtime%3Dnone%2Cfraction%3E0&order_by=version%20desc&page_size=1",
+      "page": "https://www.google.com/chrome/"
+    },
+    {
+      "bundleIdentifier": "com.brave.Browser",
+      "kind": "brave",
+      "endpointTemplate": "https://updates.bravesoftware.com/sparkle/Brave-Browser/{braveChannel}/appcast.xml",
+      "page": "https://brave.com/download/",
+      "usesBuild": true
+    },
+    {
+      "bundleIdentifier": "md.obsidian",
+      "kind": "github",
+      "endpointTemplate": "https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest",
+      "page": "https://obsidian.md/download",
+      "githubOwner": "obsidianmd",
+      "githubRepository": "obsidian-releases"
+    },
+    {
+      "bundleIdentifier": "app.freelens.Freelens",
+      "kind": "github",
+      "endpointTemplate": "https://api.github.com/repos/freelensapp/freelens/releases/latest",
+      "page": "https://github.com/freelensapp/freelens/releases",
+      "githubOwner": "freelensapp",
+      "githubRepository": "freelens"
+    },
+    {
+      "bundleIdentifier": "com.carriez.rustdesk",
+      "kind": "github",
+      "endpointTemplate": "https://api.github.com/repos/rustdesk/rustdesk/releases/latest",
+      "page": "https://github.com/rustdesk/rustdesk/releases",
+      "githubOwner": "rustdesk",
+      "githubRepository": "rustdesk"
+    },
+    {
+      "bundleIdentifier": "com.utmapp.UTM",
+      "kind": "github",
+      "endpointTemplate": "https://api.github.com/repos/utmapp/UTM/releases/latest",
+      "page": "https://github.com/utmapp/UTM/releases",
+      "githubOwner": "utmapp",
+      "githubRepository": "UTM"
+    },
+    {
+      "bundleIdentifier": "info.marcel-dierkes.KeepingYouAwake",
+      "kind": "github",
+      "endpointTemplate": "https://api.github.com/repos/newmarcel/KeepingYouAwake/releases/latest",
+      "page": "https://github.com/newmarcel/KeepingYouAwake/releases",
+      "githubOwner": "newmarcel",
+      "githubRepository": "KeepingYouAwake"
+    }
+  ],
+  "catalogVersions": [
+    {
+      "token": "claude",
+      "bundleIdentifier": "com.anthropic.claudefordesktop",
+      "format": "downloadHash"
+    },
+    {
+      "token": "microsoft-edge",
+      "bundleIdentifier": "com.microsoft.edgemac",
+      "format": "downloadUUID"
+    },
+    {
+      "token": "postgres-app",
+      "bundleIdentifier": "com.postgresapp.Postgres2",
+      "format": "postgresVariants"
+    },
+    {
+      "token": "lm-studio",
+      "bundleIdentifier": "ai.elementlabs.lmstudio",
+      "format": "plusBuild"
+    },
+    {
+      "token": "datagrip",
+      "bundleIdentifier": "com.jetbrains.datagrip",
+      "format": "prefixedBuild",
+      "buildPrefix": "DB-"
+    },
+    {
+      "token": "rider",
+      "bundleIdentifier": "com.jetbrains.rider",
+      "format": "prefixedBuild",
+      "buildPrefix": "RD-"
+    },
+    {
+      "token": "parallels",
+      "bundleIdentifier": "com.parallels.desktop.console",
+      "format": "hyphenBuild"
+    }
+  ]
+}

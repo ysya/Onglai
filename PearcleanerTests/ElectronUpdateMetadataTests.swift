@@ -281,6 +281,33 @@ final class ElectronUpdateMetadataTests: XCTestCase {
         XCTAssertNil(otherOrigin.downloadURL?.query)
     }
 
+    func testConfiguredLatestSuffixIsComparableAndRetainsPublisherVersion() throws {
+        let configuration = try ElectronUpdateMetadataParser.parseConfiguration("provider: generic\nurl: https://downloads.k8slens.dev/ide\nchannel: latest")
+        XCTAssertEqual(configuration.comparisonVersion(for: "2026.10.121159-latest"), "2026.10.121159")
+        XCTAssertTrue(configuration.acceptsReleaseVersion("2026.11.91422-latest"))
+        let metadata = try ElectronUpdateMetadataParser.parseManifest(
+            "version: 2026.11.91422-latest\npath: Lens-2026.11.91422-latest-mac.zip",
+            baseURL: URL(string: "https://downloads.k8slens.dev/ide/")!, configuration: configuration
+        )
+        XCTAssertEqual(metadata.version, "2026.11.91422-latest")
+        XCTAssertEqual(UpdateVersionComparator.compare(installed: configuration.comparisonVersion(for: "2026.10.121159-latest") ?? "",
+                                                       available: configuration.comparisonVersion(for: metadata.version) ?? ""), .orderedAscending)
+    }
+
+    func testChannelSuffixCannotCrossConfiguredChannelOrRelaxGeneralParser() throws {
+        let beta = try ElectronUpdateMetadataParser.parseConfiguration("provider: generic\nurl: https://example.com/updates\nchannel: beta")
+        XCTAssertNil(beta.comparisonVersion(for: "2026.10.121159-latest"))
+        XCTAssertFalse(beta.acceptsReleaseVersion("2026.11.91422-latest"))
+        XCTAssertThrowsError(try ElectronUpdateMetadataParser.parseManifest("version: 2026.11.91422-latest", baseURL: URL(string: "https://example.com/")!))
+        XCTAssertNil(UpdateVersionComparator.compare(installed: "2026.10.121159-latest", available: "2026.11.91422"))
+    }
+
+    func testMissingPublicManifestIsManualCheckButServiceAndNetworkErrorsRemainErrors() {
+        XCTAssertEqual(ElectronUpdateChecker.issueKind(for: UpdateHTTPClient.Error.httpStatus(404)), .unavailable)
+        XCTAssertEqual(ElectronUpdateChecker.issueKind(for: UpdateHTTPClient.Error.httpStatus(500)), .failed)
+        XCTAssertEqual(ElectronUpdateChecker.issueKind(for: URLError(.notConnectedToInternet)), .failed)
+    }
+
     private func gitLabConfiguration(channel: String = "latest") throws -> ElectronUpdateConfiguration {
         try ElectronUpdateMetadataParser.parseConfiguration("""
         provider: gitlab

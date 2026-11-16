@@ -75,8 +75,20 @@ struct ElectronUpdateConfiguration: Equatable {
         return request
     }
 
+    func comparisonVersion(for version: String) -> String? {
+        if UpdateVersionComparator.compare(installed: version, available: version) != nil { return version }
+        // Some stable publishers append their configured channel to a numeric
+        // release counter. Do not apply this outside that exact stable channel.
+        guard ["latest", "stable", "release"].contains(channel),
+              version.hasSuffix("-" + channel) else { return nil }
+        let core = String(version.dropLast(channel.count + 1))
+        guard core.range(of: #"^[0-9]+(?:\.[0-9]+)*$"#, options: .regularExpression) != nil else { return nil }
+        return core
+    }
+
     func acceptsReleaseVersion(_ version: String) -> Bool {
-        guard let versionChannel = UpdateVersionComparator.channel(for: version) else { return false }
+        guard let comparable = comparisonVersion(for: version),
+              let versionChannel = UpdateVersionComparator.channel(for: comparable) else { return false }
         switch channel {
         case "latest", "stable", "release": return versionChannel == "stable"
         case "alpha", "beta", "preview", "rc", "dev": return versionChannel == "stable" || versionChannel == channel
@@ -109,6 +121,7 @@ enum ElectronUpdateMetadataError: LocalizedError, Equatable {
     case missingProvider
     case invalidProviderConfiguration(String)
     case invalidManifest
+    case unsupportedVersion
 
     var errorDescription: String? {
         switch self {
@@ -118,6 +131,8 @@ enum ElectronUpdateMetadataError: LocalizedError, Equatable {
             return String(localized: "Electron update metadata for \(provider) is incomplete")
         case .invalidManifest:
             return String(localized: "The Electron update manifest does not contain a valid version")
+        case .unsupportedVersion:
+            return String(localized: "The Electron update version format cannot be compared automatically")
         }
     }
 }
@@ -281,7 +296,8 @@ enum ElectronUpdateMetadataParser {
     static func parseManifest(
         _ source: String,
         baseURL: URL,
-        releasePageURL: URL? = nil
+        releasePageURL: URL? = nil,
+        configuration: ElectronUpdateConfiguration? = nil
     ) throws -> ElectronReleaseMetadata {
         let values = topLevelValues(in: source)
         guard let rawVersion = nonEmpty(values["version"]) else {
@@ -289,8 +305,9 @@ enum ElectronUpdateMetadataParser {
         }
 
         let version = normalizeVersion(rawVersion)
-        guard UpdateVersionComparator.compare(installed: version, available: version) != nil else {
-            throw ElectronUpdateMetadataError.invalidManifest
+        let comparable = configuration?.comparisonVersion(for: version) ?? version
+        guard UpdateVersionComparator.compare(installed: comparable, available: comparable) != nil else {
+            throw ElectronUpdateMetadataError.unsupportedVersion
         }
 
         let filePath = preferredFileURL(in: source) ?? values["path"]

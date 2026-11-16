@@ -93,7 +93,7 @@ enum ElectronUpdateChecker {
                 let manifest = try await fetchText(request: request)
                 metadata = try ElectronUpdateMetadataParser.parseManifest(
                     manifest,
-                    baseURL: manifestURL.deletingLastPathComponent()
+                    baseURL: manifestURL.deletingLastPathComponent(), configuration: configuration
                 )
 
             case .github(let owner, let repository):
@@ -110,7 +110,9 @@ enum ElectronUpdateChecker {
                 throw ElectronCheckerError.unsupportedProvider(name)
             }
 
-            guard let comparison = UpdateVersionComparator.compare(installed: app.appVersion, available: metadata.version) else {
+            guard let installed = configuration.comparisonVersion(for: app.appVersion),
+                  let available = configuration.comparisonVersion(for: metadata.version),
+                  let comparison = UpdateVersionComparator.compare(installed: installed, available: available) else {
                 throw ElectronCheckerError.invalidVersion
             }
             guard configuration.acceptsReleaseVersion(metadata.version) else {
@@ -139,14 +141,14 @@ enum ElectronUpdateChecker {
                 releaseDescription: metadata.releaseNotes,
                 releaseNotesLink: metadata.releasePageURL?.absoluteString,
                 releaseDate: metadata.releaseDate,
-                isPreRelease: UpdateVersionComparator.channel(for: metadata.version) != "stable",
+                isPreRelease: UpdateVersionComparator.channel(for: available) != "stable",
                 isIOSApp: false,
                 foundInRegion: nil,
                 appcastItem: nil
             ))
         } catch {
             logger.log(.electron, "Failed: \(app.appName): \(error.localizedDescription)")
-            return .failed(failure(for: app, message: error.localizedDescription))
+            return .failed(failure(for: app, message: error.localizedDescription, kind: issueKind(for: error)))
         }
     }
 
@@ -174,7 +176,7 @@ enum ElectronUpdateChecker {
         return try ElectronUpdateMetadataParser.parseManifest(
             manifest,
             baseURL: manifestURL.deletingLastPathComponent(),
-            releasePageURL: releasePageURL
+            releasePageURL: releasePageURL, configuration: configuration
         )
     }
 
@@ -188,7 +190,7 @@ enum ElectronUpdateChecker {
         let metadata = try ElectronUpdateMetadataParser.parseManifest(
             manifest,
             baseURL: release.manifestURL.deletingLastPathComponent(),
-            releasePageURL: release.releasePageURL
+            releasePageURL: release.releasePageURL, configuration: configuration
         )
         return ElectronReleaseMetadata(
             version: metadata.version,
@@ -215,12 +217,23 @@ enum ElectronUpdateChecker {
         return source
     }
 
+    static func issueKind(for error: Error) -> UpdateCheckIssueKind {
+        switch error {
+        case UpdateHTTPClient.Error.httpStatus(404), ElectronUpdateMetadataError.unsupportedVersion,
+             ElectronCheckerError.invalidVersion, ElectronCheckerError.channelMismatch,
+             ElectronCheckerError.unsupportedProvider, ElectronCheckerError.missingGitHubManifest:
+            return .unavailable
+        default:
+            return .failed
+        }
+    }
+
     private static func metadataURL(for app: AppInfo) -> URL {
         app.path.appendingPathComponent(metadataRelativePath)
     }
 
-    private static func failure(for app: AppInfo, message: String) -> UpdateCheckFailure {
-        UpdateCheckFailure(appPath: app.path, appName: app.appName, message: message)
+    private static func failure(for app: AppInfo, message: String, kind: UpdateCheckIssueKind = .failed) -> UpdateCheckFailure {
+        UpdateCheckFailure(appPath: app.path, appName: app.appName, message: message, kind: kind)
     }
 }
 

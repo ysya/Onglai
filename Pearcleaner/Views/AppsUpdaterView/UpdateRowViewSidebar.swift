@@ -122,9 +122,14 @@ struct UpdateRowViewSidebar: View {
 
     @ViewBuilder
     private var subtitle: some View {
-        if !item.issues.isEmpty {
-            Text("Error")
+        if item.section == .unverified {
+            Text("Check in App")
+                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+        } else if !item.issues.isEmpty {
+            let issue = item.issues.first { $0.kind == .failed } ?? item.issues[0]
+            Text(verbatim: issue.message)
                 .foregroundStyle(.orange)
+                .help(issue.message)
         } else if let app = item.primaryApp {
             if app.source == .current || app.source == .managed || app.source == .unsupported {
                 Text(verbatim: app.appInfo.appVersion)

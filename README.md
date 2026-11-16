@@ -20,6 +20,7 @@ Onglai is a maintained continuation of [Pearcleaner](https://github.com/alienato
 - **Deletion safety net**: user-content folders (`~/Documents`, `~/Desktop`, `~/Downloads`, `~/Public`, …) and scan roots can never be offered for deletion, no matter how fuzzy the name match — defense in depth against the "uninstalled an app, lost my documents" class of bugs
 - **Adopted community fixes** that were pending upstream: macOS 26 scan performance, Homebrew `--no-quarantine` removal on brew ≥ 4.7, cask/tap handling, analytics via the formulae.brew.sh API, Sentinel deep-link hardening, and more
 - **Broader update checks**: Homebrew and Sparkle updates, official vendor services, public Electron update providers, and Homebrew catalogue matching for unmanaged apps. External updates open their update page for installation.
+- **Data-driven updater rules**: app identifiers and supported source settings are maintained in [updater-rules.json](Pearcleaner/Resources/updater-rules.json). See [rule maintenance](docs/updater-rules.md) for remote refresh, cache fallback, and revision updates.
 - **Fresh identity**: bundle ID `me.ysya.Onglai`, `onglai://` deep links, and the CLI is now `ong`
 
 ## Install

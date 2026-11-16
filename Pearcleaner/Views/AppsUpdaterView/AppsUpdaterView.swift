@@ -73,11 +73,16 @@ struct AppsUpdaterView: View {
         allItems.filter { $0.section == .attention }
     }
 
+    private var unverifiedItems: [UpdaterListItem] {
+        allItems.filter { $0.section == .unverified }
+    }
+
     private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
         var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
             (String(localized: "Update Available"), { $0.section == .available }, true, updateManager.scanningSources.contains(.homebrew) || updateManager.scanningSources.contains(.sparkle)),
             (String(localized: "External Update"), { $0.section == .external }, true, [UpdateSource.appStore, .electron, .official, .catalog].contains { updateManager.scanningSources.contains($0) }),
-            (String(localized: "Error"), { $0.section == .attention }, true, false)
+            (String(localized: "Error"), { $0.section == .attention }, true, false),
+            (String(localized: "Check in App"), { $0.section == .unverified }, true, false)
         ]
         if display.showCurrent {
             cats.append((String(localized: "Current"), { $0.section == .current }, false, false))
@@ -134,6 +139,7 @@ struct AppsUpdaterView: View {
                                 directUpdateCount: directItems.count,
                                 externalUpdateCount: externalItems.count,
                                 issueCount: attentionItems.count,
+                                unverifiedCount: unverifiedItems.count,
                                 installedBrewCount: brewManager.allPackages.count,
                                 outdatedBrewCount: brewManager.outdatedPackagesMap.count,
                                 isLoadingBrew: brewManager.isLoadingPackages || brewManager.isLoadingOutdated,
@@ -314,6 +320,7 @@ private struct UpdaterOverviewView: View {
     let directUpdateCount: Int
     let externalUpdateCount: Int
     let issueCount: Int
+    let unverifiedCount: Int
     let installedBrewCount: Int
     let outdatedBrewCount: Int
     let isLoadingBrew: Bool
@@ -344,6 +351,12 @@ private struct UpdaterOverviewView: View {
                         count: externalUpdateCount,
                         systemImage: "macwindow",
                         tint: .purple
+                    )
+                    UpdaterSummaryCard(
+                        title: "Check in App",
+                        count: unverifiedCount,
+                        systemImage: "questionmark.circle",
+                        tint: .secondary
                     )
                     UpdaterSummaryCard(
                         title: "Error",
@@ -494,15 +507,32 @@ private struct UpdateFailureDetailView: View {
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        .background((item.section == .unverified ? Color.gray : Color.orange).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
 
-                Button(action: retry) {
-                    Label("Retry", systemImage: "arrow.counterclockwise")
+                if item.section == .unverified {
+                    Text("This app's update version cannot be verified automatically. Open the app to check for updates.")
+                        .font(.callout)
+                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    if let app = item.appInfo {
+                        Button { NSWorkspace.shared.open(app.path) } label: {
+                            Label("Open App", systemImage: "arrow.up.forward.app")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    Button(action: retry) {
+                        Label("Check Again", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(updateManager.isScanning)
+                } else {
+                    Button(action: retry) {
+                        Label("Retry", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(updateManager.isScanning)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(updateManager.isScanning)
             }
             .frame(maxWidth: 700, alignment: .leading)
             .padding(36)

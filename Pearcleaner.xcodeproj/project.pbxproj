@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01A550000000000000000001 /* updater-rules.json in Resources */ = {isa = PBXBuildFile; fileRef = 01A550000000000000000002 /* updater-rules.json */; };
 		01A000000000000000000023 /* AppLoadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000022 /* AppLoadCoordinator.swift */; };
 		01A000000000000000000021 /* DeletionSafetyPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000020 /* DeletionSafetyPolicy.swift */; };
 		019FEFEB0000000000000001 /* UserDefaultsTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 019FEFEB0000000000000002 /* UserDefaultsTransfer.swift */; };
@@ -140,6 +141,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01A550000000000000000002 /* updater-rules.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "updater-rules.json"; sourceTree = "<group>"; };
 		01A000000000000000000011 /* PearcleanerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PearcleanerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		01A000000000000000000020 /* DeletionSafetyPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletionSafetyPolicy.swift; sourceTree = "<group>"; };
 		01A000000000000000000022 /* AppLoadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLoadCoordinator.swift; sourceTree = "<group>"; };
@@ -368,6 +370,7 @@
 		C76D084F2AF84E0100D07867 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				01A550000000000000000002 /* updater-rules.json */,
 				C77B90142AF18E7C009CC655 /* Info.plist */,
 				C77B90242AF2D796009CC655 /* Pearcleaner.entitlements */,
 				C770B6EC2E78DF9D005A0ABD /* Glass.icon */,
@@ -669,6 +672,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01A550000000000000000001 /* updater-rules.json in Resources */,
 				C770B6ED2E78DF9D005A0ABD /* Glass.icon in Resources */,
 				C739C3382EB027A9003639C6 /* askpass.sh in Resources */,
 				C74206E52E79E47400BDDB6A /* Assets.xcassets in Resources */,

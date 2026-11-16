@@ -111,6 +111,26 @@
         }
       }
     },
+    "Check Again" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新檢查"
+          }
+        }
+      }
+    },
+    "Check in App" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在 App 內檢查"
+          }
+        }
+      }
+    },
     "Check official vendor services and GitHub releases" : {
       "localizations" : {
         "zh-Hant" : {
@@ -424,6 +444,16 @@
         }
       }
     },
+    "The Electron update version format cannot be compared automatically" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法自動比對這個 Electron App 的更新版本格式"
+          }
+        }
+      }
+    },
     "The Homebrew application catalogue could not be verified" : {
       "localizations" : {
         "zh-Hant" : {
@@ -540,6 +570,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新服務傳回無效的回應"
+          }
+        }
+      }
+    },
+    "This app's update version cannot be verified automatically. Open the app to check for updates." : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法自動確認此 App 的更新版本。請開啟 App，使用內建的更新功能檢查。"
           }
         }
       }

@@ -15,7 +15,8 @@ enum KnownSparkleFeeds {
     static func feedURL(
         bundleIdentifier: String,
         information: [String: Any],
-        architecture: String = currentArchitecture
+        architecture: String = currentArchitecture,
+        rules: UpdaterRuleSet = UpdaterRuleStore.shared.snapshot
     ) -> URL? {
         // A publisher's explicit feed remains authoritative, including a
         // deliberately selected development channel.
@@ -24,31 +25,12 @@ enum KnownSparkleFeeds {
             return explicitFeed
         }
 
-        // These apps configure their feed at runtime. Keep this list exact:
-        // similar bundle IDs can identify another edition or signing identity.
-        let feed: String
-        switch bundleIdentifier {
-        case "com.openai.codex":
-            feed = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
-        case "com.mitchellh.ghostty":
-            // Ghostty selects tip through its own runtime configuration. Do
-            // not infer that choice from a commit hash or version string.
-            feed = "https://release.files.ghostty.org/appcast.xml"
-        case "io.tailscale.ipn.macsys":
-            feed = "https://pkgs.tailscale.com/stable/appcast.xml"
-        case "dev.kdrag0n.MacVirt":
-            guard architecture == "arm64" else { return nil }
-            // Leave rollout selection and comparison with a newer installed
-            // build to Sparkle. Do not invent a rollout bucket or select an item.
-            feed = "https://api-updates.orbstack.dev/arm64/appcast.xml?bucket="
-        case "company.thebrowser.dia":
-            feed = "https://releases.diabrowser.com/BoostBrowser-updates.xml"
-        case "com.cloudflare.1dot1dot1dot1.macos":
-            feed = "https://downloads.cloudflareclient.com/v1/update/sparkle/macos/ga"
-        default:
+        // Runtime feeds are exact, validated mappings from one immutable rule
+        // snapshot. Rollout selection and release comparisons stay with Sparkle.
+        guard let feed = rules.sparkleFeed(bundleIdentifier: bundleIdentifier, architecture: architecture) else {
             return nil
         }
-        return URL(string: feed)
+        return URL(string: feed.feedURL)
     }
 
     static func validatedFeedURL(from rawValue: String) -> URL? {

@@ -84,6 +84,7 @@ enum CatalogUpdateChecker {
 
     static func checkForUpdates(
         apps: [AppInfo],
+        rules: UpdaterRuleSet = UpdaterRuleStore.shared.snapshot,
         loader: () async throws -> [CatalogCask] = { try await cache.load() }
     ) async -> UpdateCheckResults {
         let apps = apps.filter(isEligible)
@@ -96,7 +97,7 @@ enum CatalogUpdateChecker {
             return UpdateCheckResults()
         } catch {
             return UpdateCheckResults(failures: apps.map {
-                failure(for: $0, message: "The Homebrew application catalogue could not be verified")
+                failure(for: $0, message: "The Homebrew application catalogue could not be verified", kind: .failed)
             })
         }
 
@@ -110,7 +111,8 @@ enum CatalogUpdateChecker {
                 }
                 continue
             }
-            guard supportsPlatform(cask), let remote = marketingVersion(cask.version),
+            let projection = versionProjection(for: app, cask: cask, rules: rules)
+            guard supportsPlatform(cask), let remote = projection.version ?? marketingVersion(cask.version),
                   let comparison = UpdateVersionComparator.compare(installed: app.appVersion, available: remote) else {
                 results.failures.append(failure(for: app, message: "The catalogue version cannot be compared safely"))
                 continue
@@ -124,11 +126,11 @@ enum CatalogUpdateChecker {
             }
 
             // Public bundle metadata can lag behind the cask's advertised version.
-            let verifiedBuild = cask.bundleShortVersion.flatMap { shortVersion -> String? in
+            let verifiedBuild = projection.build ?? cask.bundleShortVersion.flatMap { shortVersion -> String? in
                 guard UpdateVersionComparator.compare(installed: shortVersion, available: remote) == .orderedSame else { return nil }
                 return cask.bundleVersion
             }
-            let buildComparison = app.appBuildNumber.flatMap { localBuild in
+            let buildComparison = (projection.installedBuild ?? app.appBuildNumber).flatMap { localBuild in
                 verifiedBuild.flatMap { UpdateVersionComparator.compare(installed: localBuild, available: $0) }
             }
             if comparison == .orderedSame, verifiedBuild != nil, buildComparison == nil {
@@ -137,7 +139,7 @@ enum CatalogUpdateChecker {
             }
             if comparison == .orderedAscending || (comparison == .orderedSame && buildComparison == .orderedAscending) {
                 results.updates.append(UpdateableApp(
-                    appInfo: app, availableVersion: remote, availableBuildNumber: verifiedBuild,
+                    appInfo: app, availableVersion: projection.displayVersion ?? remote, availableBuildNumber: verifiedBuild,
                     source: .catalog, adamID: nil, appStoreURL: nil,
                     externalURL: "https://formulae.brew.sh/cask/\(cask.token)",
                     isSelectedForUpdate: false, releaseTitle: nil, releaseDescription: nil,
@@ -149,7 +151,7 @@ enum CatalogUpdateChecker {
                 // Comma fields can be builds, hashes, or other opaque tokens.
                 // Equal marketing versions do not prove those fields are current.
                 let suffixes = cask.version?.split(separator: ",", omittingEmptySubsequences: false).dropFirst() ?? []
-                if comparison == .orderedSame, !suffixes.allSatisfy({
+                if comparison == .orderedSame, !projection.suffixesVerified, !suffixes.allSatisfy({
                     !$0.isEmpty && (String($0) == app.appBuildNumber || String($0) == app.appVersion)
                 }) {
                     results.failures.append(failure(for: app, message: "The catalogue version cannot be compared safely"))
@@ -324,8 +326,55 @@ enum CatalogUpdateChecker {
         }
     }
 
-    private static func failure(for app: AppInfo, message: String) -> UpdateCheckFailure {
-        UpdateCheckFailure(appPath: app.path, appName: app.appName, message: String(localized: String.LocalizationValue(message)))
+    private static func failure(for app: AppInfo, message: String, kind: UpdateCheckIssueKind = .unavailable) -> UpdateCheckFailure {
+        UpdateCheckFailure(appPath: app.path, appName: app.appName,
+                           message: String(localized: String.LocalizationValue(message)), kind: kind)
+    }
+
+    private struct VersionProjection {
+        var version: String?
+        var build: String?
+        var installedBuild: String?
+        var displayVersion: String?
+        var suffixesVerified = false
+    }
+
+    /// The document identifies a compiled format; it cannot provide executable parsing code.
+    private static func versionProjection(for app: AppInfo, cask: CatalogCask, rules: UpdaterRuleSet) -> VersionProjection {
+        guard let rule = rules.catalogVersion(token: cask.token, bundleIdentifier: app.bundleIdentifier) else {
+            return VersionProjection()
+        }
+        let fields = cask.version?.split(separator: ",", omittingEmptySubsequences: false).map(String.init) ?? []
+        guard let version = fields.first else { return VersionProjection() }
+        switch rule.format {
+        case .downloadHash, .downloadUUID, .postgresVariants:
+            guard fields.count == 2 else { return VersionProjection() }
+            let pattern: String
+            switch rule.format {
+            case .downloadHash: pattern = #"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"#
+            case .downloadUUID: pattern = #"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$"#
+            default: pattern = #"^[0-9]+(?:-[0-9]+)*$"#
+            }
+            guard fields[1].lowercased().range(of: pattern, options: .regularExpression) != nil else { return VersionProjection() }
+            return VersionProjection(suffixesVerified: true)
+        case .plusBuild:
+            guard fields.count == 2,
+                  fields[1].range(of: #"^[0-9]+(?:\.[0-9]+)*$"#, options: .regularExpression) != nil else { return VersionProjection() }
+            let installed = app.appVersion.split(separator: "+", omittingEmptySubsequences: false)
+            guard installed.count == 2 else { return VersionProjection() }
+            return VersionProjection(build: fields[1], installedBuild: String(installed[1]),
+                                     displayVersion: version + "+" + fields[1], suffixesVerified: true)
+        case .prefixedBuild:
+            guard fields.count == 2, let local = app.appBuildNumber, let prefix = rule.buildPrefix,
+                  fields[1].range(of: #"^[0-9]+(?:\.[0-9]+)*$"#, options: .regularExpression) != nil,
+                  local.hasPrefix(prefix) else { return VersionProjection() }
+            return VersionProjection(build: fields[1], installedBuild: String(local.dropFirst(prefix.count)), suffixesVerified: true)
+        case .hyphenBuild:
+            let parts = version.split(separator: "-", omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  parts[1].allSatisfy(\.isNumber), !parts[1].isEmpty else { return VersionProjection() }
+            return VersionProjection(version: String(parts[0]), build: String(parts[1]))
+        }
     }
 
     private enum CatalogError: Error {

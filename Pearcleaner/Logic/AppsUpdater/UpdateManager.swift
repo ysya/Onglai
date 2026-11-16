@@ -243,12 +243,17 @@ class UpdateManager: ObservableObject {
                 let path = failure.appPath.standardizedFileURL
                 guard !pathsWithUpdates.contains(path) else { continue }
                 issuesByPath[path, default: []].append(
-                    UpdaterSourceIssue(source: source, message: failure.message)
+                    UpdaterSourceIssue(source: source, message: failure.message, kind: failure.kind)
                 )
             }
         }
 
+        let confirmedCurrentPaths = Set((updatesBySource[.current] ?? []).filter {
+            isConfirmedCurrent($0.appInfo)
+        }.map { $0.appInfo.path.standardizedFileURL })
         for (path, issues) in issuesByPath {
+            let isUnavailable = issues.allSatisfy { $0.kind == .unavailable }
+            if isUnavailable && confirmedCurrentPaths.contains(path) { continue }
             let appInfo = AppState.shared.sortedApps.first { $0.path.standardizedFileURL == path }
             let isUnsupportedConfiguration = issues.allSatisfy {
                 $0.message == SparkleUpdateChecker.invalidFeedConfigurationMessage ||
@@ -257,7 +262,7 @@ class UpdateManager: ObservableObject {
             items.append(
                 UpdaterListItem(
                     id: "issue:\(path.path)",
-                    section: isUnsupportedConfiguration ? .unsupported : .attention,
+                    section: isUnsupportedConfiguration ? .unsupported : (isUnavailable ? .unverified : .attention),
                     appInfo: appInfo,
                     primaryApp: nil,
                     alternateApps: [],
@@ -384,7 +389,10 @@ class UpdateManager: ObservableObject {
     /// - Parameter app: The app to check
     /// - Returns: nil if permanently ignored, version string if skipped, or nil if not ignored for this source
     func getIgnoredVersion(for app: UpdateableApp) -> String? {
-        return ignoredApps[app.uniqueIdentifier]?[app.source.rawValue] ?? nil
+        guard let value = ignoredApps[app.uniqueIdentifier]?[app.source.rawValue] ?? nil else { return nil }
+        let fields = value.components(separatedBy: "|build=")
+        guard fields.count == 2, !fields[0].hasSuffix("+" + fields[1]) else { return fields[0] }
+        return fields[0] + " (" + fields[1] + ")"
     }
 
     /// Update the fetched release notes for a specific app
@@ -414,6 +422,7 @@ class UpdateManager: ObservableObject {
         }
         var ignored = ignoredApps
         var versions = ignored[app.uniqueIdentifier] ?? [:]
+        let selectedVersion = skipVersion == app.availableVersion ? versionIdentity(for: app) : skipVersion
         if skipVersion == nil {
             // The list presents one app, so permanent hiding applies to every source.
             for source in UpdateSource.allCases { versions[source.rawValue] = .some(nil) }
@@ -423,8 +432,8 @@ class UpdateManager: ObservableObject {
         } else {
             // Each provider may spell the same release differently; skip the
             // version it actually reported so an alternate cannot resurface.
-            for candidate in candidates + [app] where versionsMatch(candidate.availableVersion, skipVersion) {
-                versions[candidate.source.rawValue] = .some(candidate.availableVersion ?? skipVersion)
+            for candidate in candidates + [app] where versionsMatch(versionIdentity(for: candidate), selectedVersion) {
+                versions[candidate.source.rawValue] = .some(selectedVersion)
             }
         }
         ignored[app.uniqueIdentifier] = versions
@@ -432,7 +441,7 @@ class UpdateManager: ObservableObject {
         for source in updatesBySource.keys {
             updatesBySource[source]?.removeAll {
                 $0.appInfo.path.standardizedFileURL == path &&
-                    (skipVersion == nil || versionsMatch($0.availableVersion, skipVersion))
+                    (skipVersion == nil || versionsMatch(versionIdentity(for: $0), selectedVersion))
             }
         }
         if !hiddenUpdates.contains(where: { $0.uniqueIdentifier == app.uniqueIdentifier }) {
@@ -447,6 +456,7 @@ class UpdateManager: ObservableObject {
                   $0.path.standardizedFileURL == app.appInfo.path.standardizedFileURL
               }) else { return nil }
 
+        let checkedRuleRevision = UpdaterRuleStore.shared.snapshot.revision
         let results: UpdateCheckResults
         switch app.source {
         case .homebrew:
@@ -471,7 +481,8 @@ class UpdateManager: ObservableObject {
         }
         guard isSourceEnabled(app.source) else { return nil }
         let path = freshAppInfo.path.standardizedFileURL
-        recordSourceEvidence(results, source: app.source, replacingAppPaths: [path])
+        guard recordSourceEvidence(results, source: app.source, replacingAppPaths: [path],
+                                   checkedRuleRevision: checkedRuleRevision) else { return nil }
         var visible = updatesBySource[app.source] ?? []
         visible.removeAll { $0.appInfo.path.standardizedFileURL == path }
         visible.append(contentsOf: results.updates)
@@ -583,6 +594,17 @@ class UpdateManager: ObservableObject {
         // Use apps from AppState (either freshly loaded or existing)
         let apps = AppState.shared.sortedApps
 
+        // Refresh data rules once before taking source snapshots. A failed
+        // refresh keeps the last validated or bundled rules and creates no app error.
+        let previousRuleRevision = UpdaterRuleStore.shared.snapshot.revision
+        if !sourcesToScan.isDisjoint(with: [.sparkle, .official, .catalog]) {
+            await UpdaterRuleStore.shared.refreshIfNeeded(force: forceReload)
+        }
+        guard !Task.isCancelled else { return }
+        let checkedRuleRevision = UpdaterRuleStore.shared.snapshot.revision
+        sourcesToScan = sourcesAfterRuleRefresh(from: previousRuleRevision, to: checkedRuleRevision, requested: sourcesToScan)
+        scanningSources = sourcesToScan
+
         // Launch concurrent scans with progressive updates
         await withTaskGroup(of: (UpdateSource, UpdateCheckResults).self) { group in
             if sourcesToScan.contains(.homebrew) {
@@ -638,7 +660,7 @@ class UpdateManager: ObservableObject {
                     break
                 }
                 guard isSourceEnabled(source) else { continue }
-                recordSourceEvidence(results, source: source)
+                guard recordSourceEvidence(results, source: source, checkedRuleRevision: checkedRuleRevision) else { continue }
                 UpdaterDebugLogger.shared.log(source, "Completed: \(results.updates.count) updates, \(results.currentAppPaths.count) current, \(results.failures.count) failed checks")
                 await processSourceResults(source: source, apps: results.updates)
             }
@@ -804,7 +826,7 @@ class UpdateManager: ObservableObject {
         // This ensures ALL hidden apps appear in the sidebar, even those without updates
         await rebuildHiddenAppsList(allApps: apps)
 
-        let failureCount = scanFailuresBySource.values.reduce(0) { $0 + $1.count }
+        let failureCount = scanFailuresBySource.values.flatMap { $0 }.filter { $0.kind == .failed }.count
         if failureCount > 0 {
             GlobalConsoleManager.shared.appendOutput(
                 "⚠ Could not verify updates for \(failureCount) app(s); they were not marked as current\n",
@@ -814,9 +836,28 @@ class UpdateManager: ObservableObject {
 
     }
 
+    func sourcesAfterRuleRefresh(from previousRevision: Int, to revision: Int, requested: Set<UpdateSource>) -> Set<UpdateSource> {
+        let requested = requested.intersection(sources.enabledSources)
+        guard previousRevision != revision else { return requested }
+        let affected = Set([UpdateSource.sparkle, .official, .catalog]).intersection(sources.enabledSources)
+        for source in affected {
+            updatesBySource[source] = nil
+            currentAppPathsBySource[source] = nil
+            reportedUpdatePathsBySource[source] = nil
+            scanFailuresBySource[source] = nil
+        }
+        hiddenUpdates.removeAll { affected.contains($0.source) }
+        managedSparkleOverrides = [:]
+        for source in [UpdateSource.current, .managed, .unsupported] { updatesBySource[source] = nil }
+        return requested.union(affected)
+    }
+
     /// Retains source-check evidence independently of presentation filters.
-    func recordSourceEvidence(_ results: UpdateCheckResults, source: UpdateSource, replacingAppPaths: Set<URL>? = nil) {
-        guard isSourceEnabled(source) else { return }
+    @discardableResult
+    func recordSourceEvidence(_ results: UpdateCheckResults, source: UpdateSource, replacingAppPaths: Set<URL>? = nil, checkedRuleRevision: Int? = nil) -> Bool {
+        guard isSourceEnabled(source) else { return false }
+        if [.sparkle, .official, .catalog].contains(source), let checkedRuleRevision,
+           checkedRuleRevision != UpdaterRuleStore.shared.snapshot.revision { return false }
         let currentPaths = Set(results.currentAppPaths.map(\.standardizedFileURL))
         let updatePaths = Set(results.updates.map { $0.appInfo.path.standardizedFileURL })
         if let replacingAppPaths {
@@ -836,6 +877,7 @@ class UpdateManager: ObservableObject {
             reportedUpdatePathsBySource[source] = updatePaths
             scanFailuresBySource[source] = results.failures
         }
+        return true
     }
 
     func isConfirmedCurrent(_ app: AppInfo) -> Bool {
@@ -868,6 +910,15 @@ class UpdateManager: ObservableObject {
             if hasEvidence { applicableSources.append(.catalog) }
         }
 
+        // A source that cannot expose comparable metadata is not a failed
+        // freshness check. Another applicable source may still verify currency.
+        applicableSources.removeAll { source in
+            let limitations = (scanFailuresBySource[source] ?? []).filter {
+                $0.appPath.standardizedFileURL == app.path.standardizedFileURL
+            }
+            return !limitations.isEmpty && limitations.allSatisfy { $0.kind == .unavailable } &&
+                reportedUpdatePathsBySource[source]?.contains(app.path.standardizedFileURL) != true
+        }
         guard !applicableSources.isEmpty else { return false }
         return applicableSources.allSatisfy {
             currentAppPathsBySource[$0]?.contains(app.path.standardizedFileURL) == true
@@ -931,7 +982,7 @@ class UpdateManager: ObservableObject {
             if permanentlyHidden.contains(app.uniqueIdentifier) { return true }
             guard let versions = ignored[app.uniqueIdentifier] else { return false }
             if versions.values.contains(where: { $0 == nil }) { return true }
-            return versions.values.contains { versionsMatch(app.availableVersion, $0) }
+            return versions.values.contains { versionsMatch(versionIdentity(for: app), $0) }
         }
         let visible = sortedApps.filter { !isIgnored($0) }
         let hiddenAppsFromSource = sortedApps.filter(isIgnored)
@@ -951,9 +1002,26 @@ class UpdateManager: ObservableObject {
         scanningSources.remove(source)
     }
 
+    private func versionIdentity(for app: UpdateableApp) -> String? {
+        guard let version = app.availableVersion else { return nil }
+        guard let build = app.availableBuildNumber, !build.isEmpty else { return version }
+        return version + "|build=" + build
+    }
+
     private func versionsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
         guard let lhs, let rhs else { return false }
-        return lhs == rhs || UpdateVersionComparator.compare(installed: lhs, available: rhs) == .orderedSame
+        let left = lhs.components(separatedBy: "|build=")
+        let right = rhs.components(separatedBy: "|build=")
+        let leftVersion = left[0].split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false)
+        let rightVersion = right[0].split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false)
+        // Freshness comparison ignores SemVer build metadata; Skip must retain it.
+        guard let leftCore = leftVersion.first, let rightCore = rightVersion.first,
+              leftVersion.dropFirst().map(String.init) == rightVersion.dropFirst().map(String.init),
+              UpdateVersionComparator.compare(installed: String(leftCore), available: String(rightCore)) == .orderedSame else {
+            return lhs == rhs
+        }
+        if left.count == 2, right.count == 2 { return left[1] == right[1] }
+        return true // Legacy ignores and sources without a build retain their version scope.
     }
 
     /// Cancel the current scan operation and any queued source scans.

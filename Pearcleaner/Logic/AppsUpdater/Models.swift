@@ -81,10 +81,16 @@ enum UpdateStatus: Equatable {
 /// A source check must distinguish a confirmed current app from one that could
 /// not be checked. Treating both as "no update" makes network and feed errors
 /// look like a successful, up-to-date result.
+enum UpdateCheckIssueKind: Sendable, Hashable {
+    case failed
+    case unavailable
+}
+
 struct UpdateCheckFailure: Sendable {
     let appPath: URL
     let appName: String
     let message: String
+    var kind: UpdateCheckIssueKind = .failed
 }
 
 struct UpdateCheckResults {
@@ -148,6 +154,7 @@ enum UpdaterItemSection: String {
     case available
     case external
     case attention
+    case unverified
     case current
     case managed
     case unsupported
@@ -156,6 +163,7 @@ enum UpdaterItemSection: String {
 struct UpdaterSourceIssue: Hashable {
     let source: UpdateSource
     let message: String
+    var kind: UpdateCheckIssueKind = .failed
 }
 
 /// A single app-centric row in the updater. An app may be reported by more

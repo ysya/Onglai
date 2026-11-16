@@ -2,6 +2,8 @@ import XCTest
 @testable import Pearcleaner
 
 final class KnownSparkleFeedsTests: XCTestCase {
+    private let bundledRules = UpdaterRuleSet.bundled()
+
     func testResolvesVerifiedRuntimeFeedsByExactBundleIdentifier() {
         let expected = [
             "com.openai.codex": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
@@ -13,42 +15,42 @@ final class KnownSparkleFeedsTests: XCTestCase {
         ]
 
         for (identifier, url) in expected {
-            XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: identifier, information: [:], architecture: "arm64")?.absoluteString, url)
+            XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: identifier, information: [:], architecture: "arm64", rules: bundledRules)?.absoluteString, url)
         }
     }
 
     func testDoesNotInferFeedsForSimilarNamesOrUnsafeMappings() {
         for identifier in ["com.openai.chat", "com.openai.codex.beta", "com.mitchellh.ghostty.debug", "io.tailscale.ipn.macos", "com.teamviewer.TeamViewer", "info.marcel-dierkes.KeepingYouAwake"] {
-            XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: identifier, information: [:], architecture: "arm64"))
+            XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: identifier, information: [:], architecture: "arm64", rules: bundledRules))
         }
     }
 
     func testKeepsAnExplicitTipFeedInsteadOfSwitchingGhosttyToStable() {
         let information = ["SUFeedURL": "https://tip.files.ghostty.org/appcast.xml"]
-        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: information)?.absoluteString, "https://tip.files.ghostty.org/appcast.xml")
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: information, rules: bundledRules)?.absoluteString, "https://tip.files.ghostty.org/appcast.xml")
     }
 
     func testDoesNotSwitchStableGhosttyToTipBasedOnlyOnVersionText() {
         let information = ["CFBundleShortVersionString": "1.4.0-dev+abcdef"]
-        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: information)?.absoluteString, "https://release.files.ghostty.org/appcast.xml")
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: information, rules: bundledRules)?.absoluteString, "https://release.files.ghostty.org/appcast.xml")
     }
 
     func testOnlyUsesTheVerifiedOrbStackArchitecture() {
-        XCTAssertNotNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "arm64"))
-        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "x86_64"))
-        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "unknown"))
+        XCTAssertNotNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "arm64", rules: bundledRules))
+        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "x86_64", rules: bundledRules))
+        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "dev.kdrag0n.MacVirt", information: [:], architecture: "unknown", rules: bundledRules))
     }
 
     func testRejectsMalformedExplicitFeedsAndUsesKnownRuntimeFallback() {
         for rawFeed in ["", "NULL", "(null)", "nil", "relative/appcast.xml", "file:///tmp/appcast.xml", "https:///appcast.xml"] {
             XCTAssertNil(KnownSparkleFeeds.validatedFeedURL(from: rawFeed))
-            XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: ["SUFeedURL": rawFeed])?.absoluteString, "https://release.files.ghostty.org/appcast.xml")
-            XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "example.unknown", information: ["SUFeedURL": rawFeed]))
+            XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: ["SUFeedURL": rawFeed], rules: bundledRules)?.absoluteString, "https://release.files.ghostty.org/appcast.xml")
+            XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "example.unknown", information: ["SUFeedURL": rawFeed], rules: bundledRules))
         }
     }
 
     func testPreservesAValidExplicitPublisherFeed() {
-        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "example.unknown", information: ["SUFeedURL": "  'https://publisher.example/appcast.xml'  "])?.absoluteString, "https://publisher.example/appcast.xml")
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "example.unknown", information: ["SUFeedURL": "  'https://publisher.example/appcast.xml'  "], rules: bundledRules)?.absoluteString, "https://publisher.example/appcast.xml")
     }
 
     func testStableAndReleaseChannelsAreNotPrereleases() {
@@ -70,4 +72,36 @@ final class KnownSparkleFeedsTests: XCTestCase {
         XCTAssertFalse(KnownSparkleFeeds.hasInvalidEdDSAPublicKey(in: ["SUPublicDSAKeyFile": "dsa_pub.pem"]))
         XCTAssertFalse(KnownSparkleFeeds.hasInvalidEdDSAPublicKey(in: [:]))
     }
+    func testInjectedRulesCanReplaceKnownFeedsAndAddAnExactBundleIdentifier() throws {
+        let rules = try rules([
+            ["bundleIdentifier": "com.mitchellh.ghostty", "feedURL": "https://updates.example.com/ghostty.xml"],
+            ["bundleIdentifier": "com.example.NewEditor", "feedURL": "https://updates.example.com/editor.xml"]
+        ])
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.mitchellh.ghostty", information: [:], rules: rules)?.absoluteString,
+                       "https://updates.example.com/ghostty.xml")
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.example.NewEditor", information: [:], rules: rules)?.absoluteString,
+                       "https://updates.example.com/editor.xml")
+        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.example.NewEditor.beta", information: [:], rules: rules))
+    }
+
+    func testInjectedFeedArchitectureRestrictionsStillYieldToAnExplicitPublisherFeed() throws {
+        let rules = try rules([
+            ["bundleIdentifier": "com.example.NewEditor", "feedURL": "https://updates.example.com/editor.xml", "architectures": ["arm64"]]
+        ])
+        XCTAssertNotNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.example.NewEditor", information: [:], architecture: "arm64", rules: rules))
+        XCTAssertNil(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.example.NewEditor", information: [:], architecture: "x86_64", rules: rules))
+        XCTAssertEqual(KnownSparkleFeeds.feedURL(bundleIdentifier: "com.example.NewEditor",
+                                               information: ["SUFeedURL": "https://publisher.example.com/intel.xml"],
+                                               architecture: "x86_64", rules: rules)?.absoluteString,
+                       "https://publisher.example.com/intel.xml")
+    }
+
+    private func rules(_ feeds: [[String: Any]]) throws -> UpdaterRuleSet {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1, "revision": 2, "sparkleFeeds": feeds, "officialSources": [], "catalogVersions": []
+        ])
+        return try UpdaterRuleSet.decodeValidated(data)
+    }
+
+
 }
