@@ -72,16 +72,8 @@ struct GridAppItem: View {
                     withAnimation(Animation.easeInOut(duration: animationEnabled ? 0.35 : 0)) {
                         showAppInFiles(appInfo: appInfo, appState: appState, locations: locations)
                     }
-                } else {
-                    // Closing the same item
-                    withAnimation(Animation.easeInOut(duration: animationEnabled ? 0.35 : 0)) {
-                        updateOnMain {
-                            appState.appInfo = .empty
-                            appState.selectedItems = []
-                            appState.currentView = .empty
-                        }
-                    }
                 }
+
             }) {
                 VStack(spacing: 6) {
 
@@ -137,24 +129,7 @@ struct GridAppItem: View {
                 )
         }
         .overlay {
-            if isSelected && isHovered {
-                // Dimmed background with centered X when selected and hovered
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(ThemeColors.shared(for: colorScheme).primaryBG.opacity(0.8))
-
-                    ZStack {
-                        Circle()
-                            .fill(ThemeColors.shared(for: colorScheme).secondaryBG.opacity(0.9))
-                            .frame(width: 32, height: 32)
-
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                    }
-                }
-                .allowsHitTesting(false)
-            } else if isSelected {
+            if isSelected {
                 // Just selected, no hover - show subtle selection indicator
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(ThemeColors.shared(for: colorScheme).accent, lineWidth: 2)

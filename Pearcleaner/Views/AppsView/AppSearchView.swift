@@ -15,7 +15,7 @@ struct AppSearchView: View {
     @EnvironmentObject var updater: Updater
     @EnvironmentObject var permissionManager: PermissionManager
     @Environment(\.colorScheme) var colorScheme
-    @State private var search: String = ""
+    private var search: String { appState.appSearchText }
     @AppStorage("settings.general.selectedSortAppsList") var selectedSortOption: SortOption =
         .alphabetical
     @AppStorage("settings.interface.animationEnabled") private var animationEnabled: Bool = true
@@ -29,21 +29,27 @@ struct AppSearchView: View {
             if appState.sortedApps.isEmpty {
                 VStack {
                     Spacer()
-                    Text("No apps found")
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        .font(.callout)
+                    if appState.isLoadingApps {
+                        ProgressView()
+                        Text("Loading applications…")
+                            .font(.callout)
+                    } else {
+                        Text("No apps found")
+                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                            .font(.callout)
+                    }
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
 
-                SearchBarSidebar(search: $search)
+                SearchBarSidebar(search: $appState.appSearchText)
                     .padding()
                     .padding(.top, 20)
 
                 if !filteredApps.isEmpty {
                     AppsListView(
-                        search: $search, filteredApps: filteredApps, isGridMode: appState.isGridMode
+                        search: $appState.appSearchText, filteredApps: filteredApps, isGridMode: appState.isGridMode
                     )
                     .padding([.bottom, .horizontal], 5)
                 } else {

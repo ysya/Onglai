@@ -120,7 +120,9 @@ class UndoHistoryManager: ObservableObject {
             }
 
             // Restore using FileManagerUndo (runs synchronously via semaphore)
-            let success = FileManagerUndo.shared.restoreFiles(filePairs: filePairs)
+            let success = await Task.detached(priority: .userInitiated) {
+                FileManagerUndo.shared.restoreFiles(filePairs: filePairs)
+            }.value
 
             if !success {
                 printOS("⚠️ Failed to restore files for \(record.appName)")

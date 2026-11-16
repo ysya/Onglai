@@ -444,40 +444,21 @@ struct ZombieView: View {
 
     private func handleUninstallAction() {
         showCustomAlert(enabled: confirmAlert, title: String(localized: "Warning"), message: String(localized: "Are you sure you want to remove these files?"), style: .warning, onOk: {
+            let selectedItemsArray = Array(selectedZombieItemsLocal)
+            let bundleName = "Orphaned Files (\(selectedItemsArray.count))"
             Task {
-                GlobalConsoleManager.shared.appendOutput("Starting deletion of \(selectedZombieItemsLocal.count) orphaned file(s)...\n", source: CurrentPage.orphans.title)
-
-                let selectedItemsArray = Array(selectedZombieItemsLocal)
-                let bundleName = "Orphaned Files (\(selectedItemsArray.count))"
-
-                let result = FileManagerUndo.shared.deleteFiles(at: selectedItemsArray, bundleName: bundleName)
-                if result {
-                    GlobalConsoleManager.shared.appendOutput("✓ Completed deletion of \(selectedItemsArray.count) orphaned file(s)\n", source: CurrentPage.orphans.title)
-
-                    if selectedZombieItemsLocal.count == appState.zombieFile.fileSize.keys.count {
-                        updateOnMain {
-                            appState.zombieFile = .empty
-                            searchZ = ""
-                            withAnimation(Animation.easeInOut(duration: animationEnabled ? 0.35 : 0)) {
-                                appState.currentView = .empty
-                            }
-
-                        }
-                    } else {
-                        // Remove items from the list
-                        appState.zombieFile.fileSize = appState.zombieFile.fileSize.filter { !selectedZombieItemsLocal.contains($0.key) }
-                        appState.zombieFile.fileIcon = appState.zombieFile.fileIcon.filter { !selectedZombieItemsLocal.contains($0.key) }
-
-                        // Clear the selection
-                        selectedZombieItemsLocal.removeAll()
-
-                        // Update memoized files and total sizes
-                        updateMemoizedFiles(for: searchZ, selectedSort: selectedSort, force: true)
-                    }
-                }
-
+                let result = await Task.detached(priority: .userInitiated) {
+                    FileManagerUndo.shared.deleteFilesWithResult(at: selectedItemsArray, bundleName: bundleName)
+                }.value
+                appState.zombieFile.fileSize = appState.zombieFile.fileSize.filter { !result.moved.contains($0.key) }
+                appState.zombieFile.fileIcon = appState.zombieFile.fileIcon.filter { !result.moved.contains($0.key) }
+                selectedZombieItemsLocal = result.failed
+                updateMemoizedFiles(for: searchZ, selectedSort: selectedSort, force: true)
+                GlobalConsoleManager.shared.appendOutput(
+                    "Moved \(result.moved.count) orphaned file(s); \(result.failed.count) failed.\n",
+                    source: CurrentPage.orphans.title
+                )
             }
-
         })
     }
 

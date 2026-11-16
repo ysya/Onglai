@@ -17,6 +17,16 @@ class PermissionManagerLocal: ObservableObject {
 
     private init() {}
 
+    func refresh() {
+        checkPermissions { self.results = $0 }
+    }
+
+    func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     var allPermissionsGranted: Bool {
         return results?.fullDiskAccess ?? false
     }

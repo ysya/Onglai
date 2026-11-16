@@ -294,9 +294,7 @@ struct BadgeOverlay: View {
 
         HStack {
             Button {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
-                    NSWorkspace.shared.open(url)
-                }
+                permissionManager.openFullDiskAccessSettings()
             } label: {
                 HStack {
                     Image(systemName: "gear")

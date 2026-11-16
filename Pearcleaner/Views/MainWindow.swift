@@ -173,6 +173,9 @@ struct MainWindow: View {
         .task {
             await selfUpdater.checkIfNeeded()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissionManager.refresh()
+        }
         .onChange(of: consoleManager.showConsole) { newValue in
             // Save console state
             let state = ConsoleState(isOpen: newValue, height: consoleManager.consoleHeight)
@@ -201,15 +204,6 @@ struct MainWindow: View {
                 Menu {
                     ForEach(CurrentPage.availablePages, id: \.self) { page in
                         Button {
-                            // Animate only the page content transition
-                            withAnimation(.easeInOut(duration: animationEnabled ? 0.3 : 0)) {
-                                // Reset appInfo when changing pages
-                                if page == .applications {
-                                    appState.appInfo = .empty
-                                    appState.currentView = .empty
-                                }
-                            }
-
                             // Change page immediately (no animation on toolbar icon)
                             appState.currentPage = page
 
@@ -244,9 +238,15 @@ struct MainWindow: View {
                 } label: {
                     HStack {
                         Image(systemName: appState.currentPage.icon)
+                        Text(appState.currentPage.title)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
                     }
                 }
                 .menuIndicator(.hidden)
+                .help("Switch utilities")
+                .accessibilityLabel("Switch utilities")
+                .disabled(appState.isDeletingFiles)
 
                 if tutorialShown {
                     HStack {
@@ -384,10 +384,46 @@ struct MainWindow: View {
 
     @ViewBuilder
     private var applicationsView: some View {
+        VStack(spacing: 0) {
+            if appState.isDeletingFiles {
+                HStack(spacing: 12) {
+                    ProgressView().controlSize(.small)
+                    Text("Moving selected files to Trash…")
+                    Spacer()
+                }
+                .padding()
+                Divider()
+            }
+            if let result = appState.deletionResult {
+                HStack(spacing: 12) {
+                    Image(systemName: result.failed.isEmpty ? "checkmark.circle" : "exclamationmark.triangle")
+                        .foregroundStyle(result.failed.isEmpty ? .green : .orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(result.moved.count) items moved to Trash")
+                        if !result.failed.isEmpty {
+                            Text("\(result.failed.count) items could not be moved. Review the remaining files and try again.")
+                                .font(.caption)
+                        }
+                    }
+                    Spacer()
+                    if !result.moved.isEmpty {
+                        Button("Restore Files…") { appState.showDeleteHistory = true }
+                    }
+                    Button {
+                        appState.deletionResult = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Dismiss result")
+                }
+                .padding()
+                Divider()
+            }
         HStack(alignment: .center, spacing: 0) {
 
             // App List
             AppSearchView()
+                .disabled(appState.isDeletingFiles)
                 .frame(width: sidebarWidth)
                 .transition(.opacity)
                 .ifGlassMain()
@@ -411,6 +447,7 @@ struct MainWindow: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .zIndex(2)
+        }
         }
     }
 
@@ -473,7 +510,7 @@ struct MountedVolumeView: View {
                         Spacer()
                     }
                 } else {
-                    Text("Select an app from the sidebar to begin")
+                    Text("Select an app to review its files, or drop an app here")
                         .font(.caption)
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                 }

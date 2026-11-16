@@ -42,6 +42,41 @@ class AppState: ObservableObject {
     @Published var selectedEnvironment: PathEnv?  // for handling dev environments
     @Published var trashError: Bool = false
     @Published var isGridMode: Bool = false
+    @Published var appSearchText = ""
+    @Published var fileSearchText = ""
+    @Published var isLoadingApps = true
+    @Published var isScanningApp = false
+    @Published var appScanStage = ""
+    @Published var appScanFoundCount = 0
+    @Published var appScanUnreadablePaths: [String] = []
+    @Published var appScanCanceled = false
+    @Published var isDeletingFiles = false
+    @Published var deletionResult: TrashResult?
+    let appScanCoordinator = AppScanCoordinator()
+    var appLoadID = UUID()
+    private var pendingBundleSizes = Set<URL>()
+
+    @discardableResult
+    func applyTrashResult(_ result: TrashResult) -> Bool {
+        appInfo.fileSize = appInfo.fileSize.filter { !result.moved.contains($0.key) }
+        appInfo.fileIcon = appInfo.fileIcon.filter { !result.moved.contains($0.key) }
+        selectedItems = result.failed
+        let container = appInfo.path.deletingLastPathComponent().deletingLastPathComponent()
+        let appWasRemoved = result.moved.contains(appInfo.path)
+            || (appInfo.wrapped && result.moved.contains(container))
+        if appWasRemoved {
+            sortedApps.removeAll { $0.path == appInfo.path }
+        }
+        deletionResult = result
+        return appWasRemoved
+    }
+
+    func cancelAppScan() {
+        appScanCoordinator.cancel()
+        isScanningApp = false
+        appScanCanceled = true
+        appScanStage = ""
+    }
 
     // Volume information
     @Published var volumeInfos: [VolumeInfo] = []
@@ -51,12 +86,15 @@ class AppState: ObservableObject {
     @Published var perAppSensitivity: [String: SearchSensitivityLevel] = [:]
 
     func getBundleSize(for appInfo: AppInfo, updateState: @escaping (Int64) -> Void) {
+        guard !pendingBundleSizes.contains(appInfo.path) else { return }
+        pendingBundleSizes.insert(appInfo.path)
         DispatchQueue.global(qos: .userInitiated).async {
             // Step 1: Check if the size is available and not 0 in the sortedApps cache
             if let existingAppInfo = self.sortedApps.first(where: { $0.path == appInfo.path }) {
                 if existingAppInfo.bundleSize > 0 {
                     // Cached size is available, update the state immediately
                     DispatchQueue.main.async {
+                        self.pendingBundleSizes.remove(appInfo.path)
                         updateState(existingAppInfo.bundleSize)
                     }
                     return
@@ -66,6 +104,7 @@ class AppState: ObservableObject {
             // Step 2: If we reach here, we need to calculate the size
             let calculatedSize = totalSizeOnDisk(for: appInfo.path)
             DispatchQueue.main.async {
+                self.pendingBundleSizes.remove(appInfo.path)
                 // Update the state and the array
                 updateState(calculatedSize)
 
@@ -719,9 +758,9 @@ enum CurrentPage: Int, CaseIterable, Identifiable {
         case .homebrew:
             return (String(localized: "Homebrew"), "mug")
         case .lipo:
-            return (String(localized: "Lipo"), "scissors")
+            return (String(localized: "App Thinning"), "scissors")
         case .orphans:
-            return (String(localized: "Orphans"), "doc.text.magnifyingglass")
+            return (String(localized: "Leftover Files"), "doc.text.magnifyingglass")
         case .packages:
             return (String(localized: "Packages"), "shippingbox")
         case .plugins:

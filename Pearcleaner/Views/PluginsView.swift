@@ -573,7 +573,7 @@ struct PluginsView: View {
 
         Task {
             GlobalConsoleManager.shared.appendOutput("Starting deletion of \(pluginsToDelete.count) selected plugin(s)...\n", source: CurrentPage.plugins.title)
-            let success = await withCheckedContinuation { continuation in
+            let outcome = await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
                     // Create descriptive bundle name for multiple plugins
                     let categories = Set(pluginsToDelete.map { $0.category })
@@ -583,20 +583,19 @@ struct PluginsView: View {
                     } else {
                         bundleName = "Mixed Plugins (\(pluginsToDelete.count) items)"
                     }
-                    let success = FileManagerUndo.shared.deleteFiles(at: urlsToDelete, bundleName: bundleName)
-                    continuation.resume(returning: success)
+                    let outcome = FileManagerUndo.shared.deleteFilesWithResult(at: urlsToDelete, bundleName: bundleName)
+                    continuation.resume(returning: outcome)
                 }
             }
 
             await MainActor.run {
-                if success {
-                    GlobalConsoleManager.shared.appendOutput("✓ Completed deletion of \(pluginsToDelete.count) plugin(s)\n", source: CurrentPage.plugins.title)
-                    // Remove all deleted plugins from the local arrays
-                    let deletedIds = Set(pluginsToDelete.map { $0.id })
-                    allPlugins.removeAll { deletedIds.contains($0.id) }
-                    selectedPlugins.removeAll()
-                    selectedPluginPaths.removeAll()
-                } else {
+                let movedPlugins = pluginsToDelete.filter { outcome.moved.contains(URL(fileURLWithPath: $0.path)) }
+                let deletedIds = Set(movedPlugins.map { $0.id })
+                allPlugins.removeAll { deletedIds.contains($0.id) }
+                selectedPlugins.subtract(deletedIds)
+                selectedPluginPaths.removeAll { outcome.moved.contains(URL(fileURLWithPath: $0)) }
+                GlobalConsoleManager.shared.appendOutput("Moved \(outcome.moved.count) plugin(s); \(outcome.failed.count) failed.\n", source: CurrentPage.plugins.title)
+                if !outcome.failed.isEmpty {
                     showCustomAlert(
                         title: "Deletion Failed",
                         message: "Failed to delete some selected plugins. They may require additional permissions or may not exist.",
@@ -1451,22 +1450,22 @@ struct AudioPluginRowView: View {
             // If there are selected related files, delete them along with the plugin
             if !relatedURLs.isEmpty {
                 let pluginURL = URL(fileURLWithPath: plugin.path)
-                let allURLs = [pluginURL] + relatedURLs
+                let allURLs = ([pluginURL] + relatedURLs).filter { fileSystemItemMayExist(at: $0) }
                 let bundleName = "\(plugin.category) Plugin - \(plugin.name) + \(relatedURLs.count) related file\(relatedURLs.count == 1 ? "" : "s")"
 
-                let success = await withCheckedContinuation { continuation in
+                let outcome = await withCheckedContinuation { continuation in
                     DispatchQueue.global(qos: .userInitiated).async {
-                        let success = FileManagerUndo.shared.deleteFiles(at: allURLs, bundleName: bundleName)
-                        continuation.resume(returning: success)
+                        let outcome = FileManagerUndo.shared.deleteFilesWithResult(at: allURLs, bundleName: bundleName)
+                        continuation.resume(returning: outcome)
                     }
                 }
 
                 await MainActor.run {
                     isPerformingAction = false
-                    if success {
-                        // Clear related files and selections
-                        relatedFiles.removeAll()
-                        selectedRelatedFiles.removeAll()
+                    let movedIds = Set(relatedFiles.filter { outcome.moved.contains($0.url) }.map { $0.id })
+                    relatedFiles.removeAll { movedIds.contains($0.id) }
+                    selectedRelatedFiles.subtract(movedIds)
+                    if outcome.failed.isEmpty {
                         onRefresh()
                     } else {
                         showCustomAlert(

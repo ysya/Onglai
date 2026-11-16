@@ -79,20 +79,22 @@ func flushBundleCache(for path: URL) {
 /// - Parameter useStreaming: If true, uses two-phase streaming (fast initial load). If false, loads full AppInfo immediately.
 func loadApps(folderPaths: [String], useStreaming: Bool = false) {
     Task { @MainActor in
+        let loadID = UUID()
+        AppState.shared.appLoadID = loadID
+        AppState.shared.isLoadingApps = true
         AppLoadCoordinator.start(
             clear: { AppState.shared.sortedApps = [] },
             load: {
                 // getSortedApps streams results or returns the full array.
-                let apps = getSortedApps(paths: folderPaths, useStreaming: useStreaming)
+                let apps = getSortedApps(paths: folderPaths, useStreaming: useStreaming, loadID: loadID)
 
                 if !useStreaming {
                     Task { @MainActor in
+                        guard AppState.shared.appLoadID == loadID else { return }
                         AppState.shared.sortedApps = apps
+                        AppState.shared.isLoadingApps = false
+                        AppState.shared.restoreZombieAssociations()
                     }
-                }
-
-                Task { @MainActor in
-                    AppState.shared.restoreZombieAssociations()
                 }
             }
         )
@@ -102,26 +104,27 @@ func loadApps(folderPaths: [String], useStreaming: Bool = false) {
 // Awaitable version that waits for apps to finish loading
 // Note: With streaming, this still clears and starts loading but doesn't wait for completion
 func loadAppsAsync(folderPaths: [String], useStreaming: Bool = false) async {
+    let loadID = UUID()
     // Clear array immediately before loading
     await MainActor.run {
+        AppState.shared.appLoadID = loadID
+        AppState.shared.isLoadingApps = true
         AppState.shared.sortedApps = []
     }
 
     // Load apps on background thread (streams results or returns full array)
     let apps = await Task.detached(priority: .userInitiated) {
-        getSortedApps(paths: folderPaths, useStreaming: useStreaming)
+        getSortedApps(paths: folderPaths, useStreaming: useStreaming, loadID: loadID)
     }.value
 
     // If not streaming, update AppState with sorted results
     if !useStreaming {
         await MainActor.run {
+            guard AppState.shared.appLoadID == loadID else { return }
             AppState.shared.sortedApps = apps
+            AppState.shared.isLoadingApps = false
+            AppState.shared.restoreZombieAssociations()
         }
-    }
-
-    // Update AppState on MainActor
-    await MainActor.run {
-        AppState.shared.restoreZombieAssociations()
     }
 }
 
@@ -129,7 +132,7 @@ func loadAppsAsync(folderPaths: [String], useStreaming: Bool = false) async {
 // Get all apps from /Applications and ~/Applications
 /// - Parameter useStreaming: If true, uses two-phase streaming (AppInfoMini → full AppInfo). If false, loads full AppInfo immediately.
 /// - Returns: Array of AppInfo. Empty if streaming (results delivered via AppState updates), populated if not streaming.
-func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
+func getSortedApps(paths: [String], useStreaming: Bool = false, loadID: UUID? = nil) -> [AppInfo] {
     @AppStorage("settings.updater.loadOnStartup") var loadUpdatesOnStartup: Bool = true
 
     let fileManager = FileManager.default
@@ -256,7 +259,8 @@ func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
 
                         // Stream to UI as each chunk completes
                         let currentBatch = chunkMiniInfos.map { $0.toAppInfo() }
-                        Task { @MainActor in
+                        DispatchQueue.main.async {
+                            if let loadID, AppState.shared.appLoadID != loadID { return }
                             AppState.shared.sortedApps.append(contentsOf: currentBatch)
                             // Sort after each addition to maintain alphabetical order
                             AppState.shared.sortedApps.sort { $0.appName.sortKey < $1.appName.sortKey }
@@ -268,6 +272,11 @@ func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
 
             // Wait for all chunks to complete before launching Phase 2
             group.notify(queue: DispatchQueue.global(qos: .utility)) {
+                DispatchQueue.main.async {
+                    if let loadID, AppState.shared.appLoadID != loadID { return }
+                    AppState.shared.isLoadingApps = false
+                    AppState.shared.restoreZombieAssociations()
+                }
                 // === PHASE 2: Background upgrade to full AppInfo (expensive operations) ===
                 for mini in allMiniInfos {
                     autoreleasepool {
@@ -276,6 +285,7 @@ func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
 
                         // Update sorted array on main thread using path as stable identifier
                         Task { @MainActor in
+                            if let loadID, AppState.shared.appLoadID != loadID { return }
                             if let targetIndex = AppState.shared.sortedApps.firstIndex(where: { $0.path == mini.path }) {
                                 AppState.shared.sortedApps[targetIndex] = fullAppInfo
                             }
@@ -285,6 +295,7 @@ func getSortedApps(paths: [String], useStreaming: Bool = false) -> [AppInfo] {
 
                 // Notify that all apps are fully loaded with complete AppInfo (if setting enabled)
                 Task { @MainActor in
+                    if let loadID, AppState.shared.appLoadID != loadID { return }
                     let loadOnStartup = UserDefaults.standard.object(forKey: "settings.updater.loadOnStartup") as? Bool ?? true
                     if loadOnStartup {
                         NotificationCenter.default.post(name: NSNotification.Name("AllAppsFullyLoaded"), object: nil)
@@ -448,7 +459,14 @@ func showAppInFiles(
     @AppStorage("settings.general.searchSensitivity") var globalSensitivityLevel: SearchSensitivityLevel = .strict
 
     updateOnMain {
-        appState.showProgress = true
+        guard !appState.isDeletingFiles else { return }
+        let scanID = appState.appScanCoordinator.start()
+        appState.isScanningApp = true
+        appState.appScanCanceled = false
+        appState.appScanStage = String(localized: "Searching app files…")
+        appState.appScanFoundCount = 0
+        appState.appScanUnreadablePaths = []
+        appState.fileSearchText = ""
         appState.appInfo = .empty
         appState.selectedItems = []
 
@@ -458,7 +476,7 @@ func showAppInFiles(
         }
 
         // Initialize the path finder and execute its search.
-        AppPathFinder(appInfo: appInfo, locations: locations, appState: appState, sensitivityOverride: appState.perAppSensitivity[appInfo.path.path]).findPaths()
+        AppPathFinder(appInfo: appInfo, locations: locations, appState: appState, sensitivityOverride: appState.perAppSensitivity[appInfo.path.path], scanID: scanID).findPaths()
 
         appState.appInfo = appInfo
 
@@ -498,11 +516,10 @@ func moveFilesToTrashCLI(at fileURLs: [URL]) -> Bool {
 }
 
 func filterValidFiles(fileURLs: [URL]) -> [URL] {
-    let fileManager = FileManager.default
     return fileURLs.filter { url in
 
         // Check if file or folder exists
-        guard fileManager.fileExists(atPath: url.path) else {
+        guard fileSystemItemMayExist(at: url) else {
             printOS("Skipping \(url.path): File or folder does not exist.")
             return false
         }
@@ -560,8 +577,11 @@ func reloadAppsList(
     completion: @escaping () -> Void = {}
 ) {
     updateOnBackground(after: delay) {
+        let loadID = UUID()
         // Clear array before reload
         updateOnMain {
+            appState.appLoadID = loadID
+            appState.isLoadingApps = true
             appState.sortedApps = []
         }
 
@@ -570,7 +590,9 @@ func reloadAppsList(
 
         // Update appState with sorted results
         updateOnMain {
+            guard appState.appLoadID == loadID else { return }
             appState.sortedApps = apps
+            appState.isLoadingApps = false
             completion()
         }
     }

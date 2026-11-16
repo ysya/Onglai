@@ -39,6 +39,31 @@ class AppPathFinder {
     private var appState: AppState?
     private var undo: Bool = false
     private var completion: (() -> Void)?
+    private let scanID: UUID?
+    private var unreadablePaths = Set<String>()
+
+    private var shouldStop: Bool {
+        guard let scanID, let appState else { return false }
+        return !appState.appScanCoordinator.isCurrent(scanID)
+    }
+
+    private func publishProgress(_ stage: String, found: Int? = nil) {
+        guard scanID != nil else { return }
+        DispatchQueue.main.async {
+            guard !self.shouldStop else { return }
+            self.appState?.appScanStage = stage
+            if let found { self.appState?.appScanFoundCount = found }
+        }
+    }
+
+    private func recordReadFailure(_ error: Error, at path: String) {
+        let error = error as NSError
+        // Absent optional app-data locations are normal, not incomplete coverage.
+        if error.domain == NSCocoaErrorDomain,
+           [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) { return }
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOENT) { return }
+        collectionAccessQueue.sync { _ = unreadablePaths.insert(path) }
+    }
 
     // Use a Set for fast membership testing
     private var collectionSet: Set<URL> = []
@@ -65,13 +90,14 @@ class AppPathFinder {
     }
 
     // Initializer for both CLI and GUI
-    init(appInfo: AppInfo, locations: Locations, appState: AppState? = nil, undo: Bool = false, sensitivityOverride: SearchSensitivityLevel? = nil, completion: (() -> Void)? = nil) {
+    init(appInfo: AppInfo, locations: Locations, appState: AppState? = nil, undo: Bool = false, sensitivityOverride: SearchSensitivityLevel? = nil, scanID: UUID? = nil, completion: (() -> Void)? = nil) {
         self.appInfo = appInfo
         self.locations = locations
         self.appState = appState
         self.undo = undo
         self.overrideSensitivityLevel = sensitivityOverride
         self.completion = completion
+        self.scanID = scanID
 
         // Initialize cachedIdentifiers eagerly and thread-safely
         let formattedBundleId = appInfo.bundleIdentifier.pearFormat()
@@ -176,6 +202,7 @@ class AppPathFinder {
                     }
                 }
             } catch {
+                recordReadFailure(error, at: containersPath.path)
                 printOS("Error accessing Containers directory: \(error)")
             }
         }
@@ -188,7 +215,9 @@ class AppPathFinder {
     }
 
     private func processLocation(_ location: String, currentDepth: Int, maxDepth: Int, isLibraryRootSearch: Bool = false) {
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: location) {
+        guard !shouldStop else { return }
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(atPath: location)
             var localResults: [URL] = []
             var subdirectoriesToSearch: [URL] = []
 
@@ -198,6 +227,7 @@ class AppPathFinder {
             // fileExists check below is the only reliable directory test for this URL.
             let locationURL = URL(fileURLWithPath: location)
             for scannedItem in contents {
+                guard !shouldStop else { return }
                 let scannedItemURL = locationURL.appending(path: scannedItem, directoryHint: .notDirectory)
                 var isDirectory: ObjCBool = false
                 let itemExists = FileManager.default.fileExists(atPath: scannedItemURL.path, isDirectory: &isDirectory)
@@ -254,6 +284,8 @@ class AppPathFinder {
             collectionAccessQueue.sync {
                 collectionSet.formUnion(localResults)
             }
+            let found = collectionAccessQueue.sync { collectionSet.count }
+            publishProgress(String(localized: "Searching app files…"), found: found)
 
             // Recursively search subdirectories if we haven't reached max depth
             if currentDepth < maxDepth {
@@ -261,6 +293,8 @@ class AppPathFinder {
                     processLocation(subdirectory.path, currentDepth: currentDepth + 1, maxDepth: maxDepth, isLibraryRootSearch: isLibraryRootSearch)
                 }
             }
+        } catch {
+            recordReadFailure(error, at: location)
         }
     }
 
@@ -268,6 +302,7 @@ class AppPathFinder {
     private func collectLocations() {
         let dispatchGroup = DispatchGroup()
         for location in self.locations.apps.paths {
+            guard !shouldStop else { break }
             dispatchGroup.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 // Use depth=2 for Library directories to find files in vendor subdirectories
@@ -494,11 +529,13 @@ class AppPathFinder {
 
     // Check spotlight index for leftovers missed by manual search
     private func spotlightSupplementalPaths() -> [URL] {
+        guard !shouldStop else { return [] }
+        publishProgress(String(localized: "Checking Spotlight…"))
         // Spotlight enabled for all levels with sensitivity-appropriate matching
         // Strict: Exact matches only (via ==[cd] predicate and post-filter)
         // Enhanced/Deep: Contains matches (via CONTAINS[cd] predicate)
         updateOnMain {
-            self.appState?.progressStep = 1
+            if !self.shouldStop { self.appState?.progressStep = 1 }
         }
         var results: [URL] = []
         let query = NSMetadataQuery()
@@ -611,13 +648,18 @@ class AppPathFinder {
         }
 
         query.start()
-
-        // Timeout after 5 seconds
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5) {
+        let timeout = Timer(timeInterval: 5, repeats: false) { _ in
             CFRunLoopStop(currentRunLoop)
         }
-
+        let cancellation = Timer(timeInterval: 0.1, repeats: true) { _ in
+            if self.shouldStop { CFRunLoopStop(currentRunLoop) }
+        }
+        RunLoop.current.add(timeout, forMode: .default)
+        RunLoop.current.add(cancellation, forMode: .default)
         CFRunLoopRun()
+        timeout.invalidate()
+        cancellation.invalidate()
+        query.stop()
 
         // Limit results to prevent excessive post-processing delays
         if results.count > 500 {
@@ -631,6 +673,7 @@ class AppPathFinder {
     // Finalize the collection for GUI usage
     private func finalizeCollection() {
         DispatchQueue.global(qos: .userInitiated).async {
+            guard !self.shouldStop else { return }
             let outliers = self.handleOutliers()
             let outliersEx = self.handleOutliers(include: false)
             var tempCollection: [URL] = []
@@ -650,6 +693,7 @@ class AppPathFinder {
                 GlobalConsoleManager.shared.appendOutput("Running Spotlight supplemental search...\n", source: CurrentPage.applications.title)
             }
             let spotlightResults = self.spotlightSupplementalPaths()
+            guard !self.shouldStop else { return }
             let spotlightOnly = spotlightResults.filter { !self.collectionSet.contains($0) }
 
             if spotlightOnly.count > 0 {
@@ -789,6 +833,8 @@ class AppPathFinder {
 
     // Post-processing: calculate file details, update state, and call completion
     private func handlePostProcessing(sortedCollection: [URL]) {
+        guard !shouldStop else { return }
+        publishProgress(String(localized: "Calculating file sizes…"), found: sortedCollection.count)
         // Fetch associated zombie files and add them to the collection
         var tempCollection = sortedCollection
         let associatedFiles = fetchAssociatedZombieFiles()
@@ -811,6 +857,7 @@ class AppPathFinder {
                 var localFileIcon: [URL: NSImage?] = [:]
 
                 for path in chunk {
+                    if self.shouldStop { break }
                     let size = spotlightSizeForURL(path)
                     localFileSize[path] = size
                     localFileIcon[path] = self.getSmartIcon(for: path)
@@ -825,6 +872,7 @@ class AppPathFinder {
             }
         }
         group.wait()
+        guard !shouldStop else { return }
         let arch = checkAppBundleArchitecture(at: self.appInfo.path.path)
         var updatedCollection = tempCollection
         if updatedCollection.count == 1, let firstURL = updatedCollection.first, firstURL.path.contains(".Trash") {
@@ -832,6 +880,11 @@ class AppPathFinder {
         }
 
         DispatchQueue.main.async {
+            if let scanID = self.scanID {
+                guard self.appState?.appScanCoordinator.finish(scanID) == true else { return }
+                self.appState?.isScanningApp = false
+                self.appState?.appScanUnreadablePaths = self.collectionAccessQueue.sync { self.unreadablePaths.sorted() }
+            }
             self.appInfo.fileSize = fileSize
             self.appInfo.fileIcon = fileIcon
             self.appInfo.arch = arch
@@ -840,7 +893,7 @@ class AppPathFinder {
                 self.appState?.selectedItems = Set(updatedCollection)
             }
             self.appState?.progressStep = 0
-            self.appState?.showProgress = false
+            if self.scanID == nil { self.appState?.showProgress = false }
 
             let totalSize = fileSize.values.reduce(0, +)
             let sizeString = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
@@ -853,6 +906,8 @@ class AppPathFinder {
     // Public method for GUI
     func findPaths() {
         Task(priority: .background) {
+            guard !self.shouldStop else { return }
+            self.publishProgress(String(localized: "Searching app files…"))
             await GlobalConsoleManager.shared.appendOutput("Searching for files related to \(self.appInfo.appName)...\n", source: CurrentPage.applications.title)
 
             if self.appInfo.webApp {

@@ -8,6 +8,39 @@
 import Foundation
 import SwiftUI
 import AlinFoundation
+import Darwin
+
+enum FileSystemItemStatus {
+    case present, missing, unreadable
+}
+
+func fileSystemItemStatus(at url: URL) -> FileSystemItemStatus {
+    var info = stat()
+    if lstat(url.path, &info) == 0 { return .present }
+    return errno == ENOENT || errno == ENOTDIR ? .missing : .unreadable
+}
+
+/// Retain unknown paths for authorization; only proven absence is safe to skip.
+func fileSystemItemMayExist(at url: URL) -> Bool {
+    fileSystemItemStatus(at: url) != .missing
+}
+
+struct TrashResult {
+    let moved: Set<URL>
+    let failed: Set<URL>
+
+    var succeeded: Bool { !moved.isEmpty && failed.isEmpty }
+
+    static func confirmed(
+        requested: [URL], filePairs: [(trashURL: URL, originalURL: URL)]
+    ) -> TrashResult {
+        let moved = Set(filePairs.compactMap { pair in
+            fileSystemItemStatus(at: pair.originalURL) == .missing
+                && fileSystemItemStatus(at: pair.trashURL) == .present ? pair.originalURL : nil
+        })
+        return TrashResult(moved: moved, failed: Set(requested).subtracting(moved))
+    }
+}
 
 class FileManagerUndo {
     // MARK: - Singleton Instance
@@ -64,13 +97,22 @@ class FileManagerUndo {
     }
 
     func deleteFiles(at urls: [URL], isCLI: Bool = false, bundleName: String? = nil) -> Bool {
+        guard !urls.isEmpty else { return false }
+        // Legacy callers retry a whole batch. Previously moved sources are
+        // already absent and must not make every subsequent attempt fail.
+        let remaining = urls.filter { fileSystemItemMayExist(at: $0) }
+        guard !remaining.isEmpty else { return true }
+        return deleteFilesWithResult(at: remaining, isCLI: isCLI, bundleName: bundleName).succeeded
+    }
+
+    func deleteFilesWithResult(at urls: [URL], isCLI: Bool = false, bundleName: String? = nil) -> TrashResult {
         // Filter out invalid/dangerous paths before deletion
         let validURLs = urls.filter { validatePath($0.path) }
 
         // If no valid paths remain, return early
         guard !validURLs.isEmpty else {
             printOS("⚠️ All paths were blocked - no files deleted")
-            return false
+            return TrashResult(moved: [], failed: Set(urls))
         }
 
         // Log if any paths were filtered out
@@ -78,8 +120,6 @@ class FileManagerUndo {
             printOS("⚠️ Filtered out \(urls.count - validURLs.count) dangerous path(s)")
         }
         let trashPath = (NSHomeDirectory() as NSString).appendingPathComponent(".Trash")
-        let dispatchSemaphore = DispatchSemaphore(value: 0)  // Semaphore to make it synchronous
-        var finalStatus = false  // Store the final success/failure status
 
         var tempFilePairs: [(trashURL: URL, originalURL: URL)] = []
         var seenFileNames: [String: Int] = [:]
@@ -142,16 +182,20 @@ class FileManagerUndo {
 
         // Combine folder creation and file moves
         let finalCommands = "\(createFolderCommand) ; \(mvCommands)"
-        let filePairs = tempFilePairs
+        _ = executeFileCommands(finalCommands, requiresPrivileges: requiresPrivileges)
+        let result = TrashResult.confirmed(requested: urls, filePairs: tempFilePairs)
+        let filePairs = tempFilePairs.filter { result.moved.contains($0.originalURL) }
 
-        if executeFileCommands(finalCommands, requiresPrivileges: requiresPrivileges) {
-            undoManager.registerUndo(withTarget: self) { target in
-                let result = target.restoreFiles(filePairs: filePairs)
-                if !result {
-                    printOS("Trash Error: Could not restore files.")
+        if !filePairs.isEmpty {
+            updateOnMain { [self] in
+                undoManager.registerUndo(withTarget: self) { target in
+                    let result = target.restoreFiles(filePairs: filePairs)
+                    if !result {
+                        printOS("Trash Error: Could not restore files.")
+                    }
                 }
+                undoManager.setActionName("Delete File")
             }
-            undoManager.setActionName("Delete File")
 
             // Record in persistent history
             Task { @MainActor in
@@ -167,19 +211,9 @@ class FileManagerUndo {
                 playTrashSound()
             }
 
-            finalStatus = true
-        } else {
-            //            printOS("Trash Error: \(isCLI ? "Could not run commands directly with sudo." : "Could not perform privileged commands.")")
-            updateOnMain {
-                AppState.shared.trashError = true
-            }
-            finalStatus = false
         }
-
-        dispatchSemaphore.signal()
-
-        dispatchSemaphore.wait()
-        return finalStatus
+        updateOnMain { AppState.shared.trashError = !result.failed.isEmpty }
+        return result
     }
 
     func restoreFiles(filePairs: [(trashURL: URL, originalURL: URL)], isCLI: Bool = false) -> Bool {

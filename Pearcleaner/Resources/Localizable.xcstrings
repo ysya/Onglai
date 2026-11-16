@@ -1,6 +1,380 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld items could not be moved. Review the remaining files and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個項目無法移動。請檢查剩餘檔案後重試。"
+          }
+        }
+      }
+    },
+    "%lld items found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已找到 %lld 個項目"
+          }
+        }
+      }
+    },
+    "%lld items moved to Trash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已將 %lld 個項目移到垃圾桶"
+          }
+        }
+      }
+    },
+    "%lld of %lld visible items selected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選取目前顯示的 %2$lld 個項目中的 %1$lld 個"
+          }
+        }
+      }
+    },
+    "%lld selected items are hidden by search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "另有 %lld 個已選項目被搜尋條件隱藏"
+          }
+        }
+      }
+    },
+    "%lld unreadable locations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個無法讀取的位置"
+          }
+        }
+      }
+    },
+    "All Users" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有使用者"
+          }
+        }
+      }
+    },
+    "App Thinning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 瘦身"
+          }
+        }
+      }
+    },
+    "Calculating file sizes…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在計算檔案大小…"
+          }
+        }
+      }
+    },
+    "Cancel Scan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消掃描"
+          }
+        }
+      }
+    },
+    "Checking Spotlight…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在檢查 Spotlight…"
+          }
+        }
+      }
+    },
+    "Close App Details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 App 詳細資料"
+          }
+        }
+      }
+    },
+    "Current User" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前使用者"
+          }
+        }
+      }
+    },
+    "Deselect Results" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消選取搜尋結果"
+          }
+        }
+      }
+    },
+    "Dismiss result" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉結果提示"
+          }
+        }
+      }
+    },
+    "Leftover Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "殘留檔案"
+          }
+        }
+      }
+    },
+    "Loading applications…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入應用程式…"
+          }
+        }
+      }
+    },
+    "Move %lld selected items to Trash? This includes selected items hidden by the search filter." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將選取的 %lld 個項目移到垃圾桶嗎？這也包含被搜尋條件隱藏的已選項目。"
+          }
+        }
+      }
+    },
+    "Move Selected Files to Trash" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將選取的檔案移到垃圾桶"
+          }
+        }
+      }
+    },
+    "Moving selected files to Trash…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在將選取的檔案移到垃圾桶…"
+          }
+        }
+      }
+    },
+    "Open Full Disk Access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟完全磁碟取用設定"
+          }
+        }
+      }
+    },
+    "Restore Files…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還原檔案…"
+          }
+        }
+      }
+    },
+    "Scan Again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新掃描"
+          }
+        }
+      }
+    },
+    "Scan canceled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消掃描"
+          }
+        }
+      }
+    },
+    "Scan may be incomplete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "掃描結果可能不完整"
+          }
+        }
+      }
+    },
+    "Searching app files…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜尋 App 相關檔案…"
+          }
+        }
+      }
+    },
+    "Select Only Results" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅選取搜尋結果"
+          }
+        }
+      }
+    },
+    "Select Results" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取搜尋結果"
+          }
+        }
+      }
+    },
+    "Select an app to review its files, or drop an app here" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取 App 以檢視相關檔案，或將 App 拖到這裡"
+          }
+        }
+      }
+    },
+    "Some files could not be moved. Check permissions and try again. Open details for technical information." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分檔案無法移動，請檢查權限後重試。技術資訊可在詳細資料中查看。"
+          }
+        }
+      }
+    },
+    "Some files could not be restored. Check permissions and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分檔案無法還原，請檢查權限後重試。"
+          }
+        }
+      }
+    },
+    "Some locations could not be read. Grant Full Disk Access, then scan again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分位置無法讀取。請授予完全磁碟取用權限後重新掃描。"
+          }
+        }
+      }
+    },
+    "Switch utilities" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換工具"
+          }
+        }
+      }
+    },
+    "Trash %lld Items (%@)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移動 %lld 個項目到垃圾桶（%@）"
+          }
+        }
+      }
+    },
     "" : {
       "comment" : "Do not translate",
       "shouldTranslate" : false

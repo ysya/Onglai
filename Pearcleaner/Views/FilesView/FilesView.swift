@@ -34,6 +34,7 @@ struct FilesView: View {
     @AppStorage("settings.general.searchSensitivity") private var globalSensitivityLevel: SearchSensitivityLevel = .strict
     @ObservedObject private var consoleManager = GlobalConsoleManager.shared
     @State private var permissionsSheetWindow: NSWindow?
+    @ObservedObject private var permissionManager = PermissionManagerLocal.shared
 
     var body: some View {
 
@@ -49,20 +50,33 @@ struct FilesView: View {
         let displaySizeTotal = formatByte(size: appState.appInfo.totalSize).human
 
         VStack(alignment: .center) {
-            if appState.showProgress {
-                VStack {
+            if appState.isScanningApp {
+                VStack(spacing: 16) {
                     Spacer()
-
                     ProgressView()
-//                    ProgressStepView(currentStep: appState.progressStep)
-
+                    Text(appState.appScanStage)
+                    Text("\(appState.appScanFoundCount) items found")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Cancel Scan") { appState.cancelAppScan() }
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(.all)
 //                .transition(.opacity)
 //                .animation(.none, value: appState.showProgress)
+            } else if appState.appScanCanceled {
+                VStack(spacing: 12) {
+                    Spacer()
+                    Label("Scan canceled", systemImage: "stop.circle")
+                    Button("Scan Again") { refreshFiles() }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                if permissionManager.shouldShowPermissionWarning || !appState.appScanUnreadablePaths.isEmpty {
+                    scanCoverageNotice
+                }
 
                 ZStack {
 
@@ -140,6 +154,7 @@ struct FilesView: View {
             ToolbarItem { Spacer() }
 
             TahoeToolbarItem(isGroup: true) {
+                Group {
                 Button {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         consoleManager.showConsole.toggle()
@@ -188,7 +203,6 @@ struct FilesView: View {
                             appInfo: currentAppInfo, appState: appState,
                             locations: locations)
                     }
-                    GlobalConsoleManager.shared.appendOutput("✓ Refreshed files\n", source: CurrentPage.applications.title)
                 } label: {
                     Label("Refresh", systemImage: "arrow.counterclockwise")
                 }
@@ -202,6 +216,18 @@ struct FilesView: View {
                     Label("Info", systemImage: "sidebar.trailing")
                 }
                 .help("See app details")
+
+                Button {
+                    appState.cancelAppScan()
+                    appState.appInfo = .empty
+                    appState.selectedItems = []
+                    appState.currentView = .empty
+                } label: {
+                    Label("Close App Details", systemImage: "xmark")
+                }
+                .help("Close App Details")
+                }
+                .disabled(appState.isDeletingFiles)
             }
 
 
@@ -209,96 +235,75 @@ struct FilesView: View {
 
     }
 
-    // Function to handle the uninstall action
+    private func refreshFiles() {
+        showAppInFiles(appInfo: appState.appInfo, appState: appState, locations: locations)
+    }
+
+    private var scanCoverageNotice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Scan may be incomplete", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+            Text("Some locations could not be read. Grant Full Disk Access, then scan again.")
+                .font(.caption)
+            HStack {
+                Button("Open Full Disk Access") { permissionManager.openFullDiskAccessSettings() }
+                Button("Scan Again") { refreshFiles() }
+            }
+            if !appState.appScanUnreadablePaths.isEmpty {
+                DisclosureGroup("\(appState.appScanUnreadablePaths.count) unreadable locations") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(appState.appScanUnreadablePaths, id: \.self) { path in
+                                Text(path).font(.caption).textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 100)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .disabled(appState.isDeletingFiles)
+    }
+
+    // Apply only confirmed moves, keeping failures selected for a retry.
     private func handleUninstallAction() {
+        guard !appState.isDeletingFiles, !appState.isScanningApp, !appState.selectedItems.isEmpty else { return }
+        let app = appState.appInfo
+        let selectedItemsArray = Array(appState.selectedItems)
+        let hasHiddenSelection = !appState.fileSearchText.isEmpty
         showCustomAlert(
-            enabled: confirmAlert, title: String(localized: "Warning"),
-            message: String(localized: "Are you sure you want to remove these files?"),
+            enabled: confirmAlert || hasHiddenSelection,
+            title: String(localized: "Move Selected Files to Trash"),
+            message: String(localized: "Move \(selectedItemsArray.count) selected items to Trash? This includes selected items hidden by the search filter."),
+            okText: "Move to Trash",
             style: .warning,
             onOk: {
+                appState.isDeletingFiles = true
+                appState.deletionResult = nil
                 Task {
-                    GlobalConsoleManager.shared.appendOutput("Starting deletion for \(appState.appInfo.appName)...\n", source: CurrentPage.applications.title)
-                    let selectedItemsArray = Array(appState.selectedItems)
-                    var appWasRemoved = false
-
-                    // Stop Sentinel FileWatcher momentarily to ignore .app bundle being sent to Trash
                     sendStopNotificationFW()
-
-                    // Kill the app before proceeding
-                    await killApp(appId: appState.appInfo.bundleIdentifier)
-
-                    // Trash the files
-                    let _ = moveFilesToTrash(appState: appState, at: selectedItemsArray)
-
-                    // Always cleanup UI, regardless of whether files physically existed
-                    updateOnMain {
-                        // Remove selected items from app's file list
-                        appState.appInfo.fileSize = appState.appInfo.fileSize.filter {
-                            !selectedItemsArray.contains($0.key)
-                        }
-                        appState.appInfo.fileIcon = appState.appInfo.fileIcon.filter {
-                            !selectedItemsArray.contains($0.key)
-                        }
-                        appState.selectedItems.removeAll()
-                        updateSortedFiles()
+                    defer {
+                        sendStartNotificationFW()
+                        appState.isDeletingFiles = false
                     }
-
-                    // Determine if it's a full delete
-                    let appPath = appState.appInfo.path.absoluteString
-                    let appRemoved = selectedItemsArray.contains(where: {
-                        $0.absoluteString == appPath
-                    })
-
-                    // For wrapped apps, also check if the container is being deleted
-                    let containerRemoved: Bool = {
-                        if appState.appInfo.wrapped {
-                            // Get container path by going up two levels from inner app
-                            // e.g., Container.app/Wrapper/ActualApp.app -> Container.app
-                            let containerPath = appState.appInfo.path
-                                .deletingLastPathComponent()  // Remove ActualApp.app -> Container.app/Wrapper
-                                .deletingLastPathComponent()  // Remove Wrapper -> Container.app
-
-                            return selectedItemsArray.contains(where: {
-                                $0.absoluteString == containerPath.absoluteString
-                            })
-                        }
-                        return false
-                    }()
-
-                    let mainAppRemoved = !appState.appInfo.wrapped && appRemoved
-                    let wrappedAppRemoved = appState.appInfo.wrapped && (appRemoved || containerRemoved)
-
-                    let isInTrash = appState.appInfo.path.path.contains(".Trash")
-
-                    var deleteType: DeleteType
-
-                    if mainAppRemoved || wrappedAppRemoved || isInTrash {
-                        deleteType = .fullDelete
-                    } else {
-                        deleteType = .semiDelete
-                    }
-
-                    switch deleteType {
-                    case .fullDelete:
-                        // The main app bundle is deleted or is already in Trash (Sentinel delete)
-                        appWasRemoved = true
-                        // Remove the app from the app list
-                        await removeApp(appState: appState, withPath: appState.appInfo.path)
-                        GlobalConsoleManager.shared.appendOutput("✓ Completed full deletion for \(appState.appInfo.appName)\n", source: CurrentPage.applications.title)
-
-                    case .semiDelete:
-                        // Some files deleted but main app bundle remains
-                        // App remains in the list; removes only deleted items
-                        GlobalConsoleManager.shared.appendOutput("✓ Completed partial deletion for \(appState.appInfo.appName)\n", source: CurrentPage.applications.title)
-                        break
-                    }
-
-                    // Process the next app if in external mode
-                    processNextExternalApp(
-                        appWasRemoved: appWasRemoved, isInTrash: isInTrash)
-
-                    // Send Sentinel FileWatcher start notification
-                    sendStartNotificationFW()
+                    await killApp(appId: app.bundleIdentifier)
+                    let result = await Task.detached(priority: .userInitiated) {
+                        let valid = filterValidFiles(fileURLs: selectedItemsArray)
+                        let moved = FileManagerUndo.shared.deleteFilesWithResult(at: valid, bundleName: app.appName)
+                        return TrashResult(moved: moved.moved, failed: Set(selectedItemsArray).subtracting(moved.moved))
+                    }.value
+                    let appWasRemoved = appState.applyTrashResult(result)
+                    updateSortedFiles()
+                    GlobalConsoleManager.shared.appendOutput(
+                        "Moved \(result.moved.count) item(s) to Trash; \(result.failed.count) failed.\n",
+                        source: CurrentPage.applications.title
+                    )
+                    guard result.failed.isEmpty else { return }
+                    let appIsGone = appWasRemoved || !FileManager.default.fileExists(atPath: app.path.path)
+                    processNextExternalApp(appWasRemoved: appIsGone, isInTrash: app.path.path.contains(".Trash"))
                 }
             })
     }

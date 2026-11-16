@@ -1160,23 +1160,21 @@ struct PackageRowView: View {
     }
 
     private func performBulkFileRemoval(_ filePaths: [String]) async {
-        let success = await withCheckedContinuation { continuation in
+        let outcome = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 // Use FileManagerUndo to safely delete files to trash
                 let fileURLs = filePaths.map { URL(fileURLWithPath: $0) }
-                let success = FileManagerUndo.shared.deleteFiles(at: fileURLs, bundleName: "PKG-\(package.packageId)")
-                continuation.resume(returning: success)
+                let outcome = FileManagerUndo.shared.deleteFilesWithResult(at: fileURLs, bundleName: "PKG-\(package.packageId)")
+                continuation.resume(returning: outcome)
             }
         }
         
         await MainActor.run {
             isPerformingAction = false
             
-            if success {
-                // Update BOM files locally using callback
-                let updatedBomFiles = package.bomFiles.filter { !filePaths.contains($0) }
-                onUpdateBomFiles(updatedBomFiles)
-            } else {
+            let updatedBomFiles = package.bomFiles.filter { !outcome.moved.contains(URL(fileURLWithPath: $0)) }
+            onUpdateBomFiles(updatedBomFiles)
+            if !outcome.failed.isEmpty {
                 showCustomAlert(
                     title: "Removal Failed",
                     message: "Failed to remove some or all package files. Some files may require additional permissions or may not exist.",

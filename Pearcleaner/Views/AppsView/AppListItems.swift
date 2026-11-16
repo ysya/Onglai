@@ -62,13 +62,6 @@ struct AppListItems: View {
             Button(action: {
                 if !isSelected {
                     showAppInFiles(appInfo: appInfo, appState: appState, locations: locations)
-                } else {
-                    // Closing the same item
-                    updateOnMain {
-                        appState.appInfo = .empty
-                        appState.selectedItems = []
-                        appState.currentView = .empty
-                    }
                 }
 
             }) {
@@ -182,12 +175,10 @@ struct AppListItems: View {
                                     : ThemeColors.shared(for: colorScheme).primaryText.opacity(0.5)
                             )
                             .frame(width: isSelected ? 20 : 2, height: isSelected ? 20 : 25)
-
                         if isSelected {
-                            Image(systemName: "xmark")
+                            Image(systemName: "checkmark")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.white)
-                                .opacity(isSelected ? 1 : 0)
                         }
                     }
                     //                    .animation(animationEnabled ? .spring(response: 0.4, dampingFraction: 0.7, blendDuration: 0) : .linear(duration: 0), value: isSelected)

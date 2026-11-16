@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 
 struct AppsListView: View {
+    @EnvironmentObject var appState: AppState
     @Binding var search: String
     @AppStorage("settings.general.selectedSort") var selectedSortAlpha: Bool = true
     @AppStorage("settings.interface.scrollIndicators") private var scrollIndicators: Bool = false
@@ -17,6 +18,7 @@ struct AppsListView: View {
     var isGridMode: Bool
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             if isGridMode {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -29,33 +31,33 @@ struct AppsListView: View {
 
                     if !filteredUserApps.isEmpty {
                         GridSectionView(
-                            title: String(localized: "User"), count: filteredUserApps.count,
+                            title: String(localized: "Current User"), count: filteredUserApps.count,
                             apps: filteredUserApps, search: $search,
                             maxColumns: min(optimalColumns, filteredUserApps.count))
                     }
 
                     if !filteredSystemApps.isEmpty {
                         GridSectionView(
-                            title: String(localized: "System"), count: filteredSystemApps.count,
+                            title: String(localized: "All Users"), count: filteredSystemApps.count,
                             apps: filteredSystemApps, search: $search,
                             maxColumns: min(optimalColumns, filteredSystemApps.count))
                     }
                 }
                 .padding(.horizontal, 5)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     let filteredUserApps = filteredApps.filter { !$0.system }
                     let filteredSystemApps = filteredApps.filter { $0.system }
 
                     if !filteredUserApps.isEmpty {
                         SectionView(
-                            title: String(localized: "User"), count: filteredUserApps.count,
+                            title: String(localized: "Current User"), count: filteredUserApps.count,
                             apps: filteredUserApps, search: $search)
                     }
 
                     if !filteredSystemApps.isEmpty {
                         SectionView(
-                            title: String(localized: "System"), count: filteredSystemApps.count,
+                            title: String(localized: "All Users"), count: filteredSystemApps.count,
                             apps: filteredSystemApps, search: $search
                         )
                         .padding(.top, 5)
@@ -64,6 +66,13 @@ struct AppsListView: View {
             }
         }
         .scrollIndicators(scrollIndicators ? .automatic : .never)
+        .onAppear {
+            let path = appState.appInfo.path
+            if filteredApps.contains(where: { $0.path == path }) {
+                DispatchQueue.main.async { proxy.scrollTo(path, anchor: .center) }
+            }
+        }
+        }
     }
 }
 
@@ -76,7 +85,7 @@ struct SectionView: View {
     @AppStorage("settings.interface.animationEnabled") private var animationEnabled: Bool = true
 
     var body: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             Header(title: title, count: count)
                 .padding(.leading, 5)
                 .onTapGesture {
@@ -86,7 +95,7 @@ struct SectionView: View {
                 }
 
             if showItems {
-                ForEach(apps, id: \.self) { appInfo in
+                ForEach(apps, id: \.path) { appInfo in
                     AppListItems(search: $search, appInfo: appInfo)
                         .transition(.opacity)
                 }
@@ -153,7 +162,7 @@ struct GridSectionView: View {
                         GridItem(.adaptive(minimum: 120, maximum: 120), spacing: 5)
                     ], spacing: 5
                 ) {
-                    ForEach(apps, id: \.self) { appInfo in
+                    ForEach(apps, id: \.path) { appInfo in
                         GridAppItem(search: $search, appInfo: appInfo)
                             .transition(.opacity)
                     }

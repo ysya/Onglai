@@ -172,7 +172,7 @@ struct AppCommands: Commands {
                     appState.currentPage = .lipo
 
                 } label: {
-                    Text("App Lipo")
+                    Text(CurrentPage.lipo.title)
                 }
                 .keyboardShortcut("5", modifiers: .command)
 
@@ -181,7 +181,7 @@ struct AppCommands: Commands {
                     appState.currentPage = .orphans
 
                 } label: {
-                    Text("Orphaned Files")
+                    Text(CurrentPage.orphans.title)
                 }
                 .keyboardShortcut("6", modifiers: .command)
 

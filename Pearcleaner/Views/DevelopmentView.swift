@@ -920,9 +920,11 @@ struct WorkspaceStorageCleanerView: View {
     private func cleanAllOrphanedWorkspaces() {
         let urls = orphanedWorkspaces.map { URL(fileURLWithPath: $0.path) }
         let bundleName = "Development - Workspaces (\(orphanedWorkspaces.count))"
-        let result = FileManagerUndo.shared.deleteFiles(at: urls, bundleName: bundleName)
-        if result {
-            orphanedWorkspaces.removeAll()
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                FileManagerUndo.shared.deleteFilesWithResult(at: urls, bundleName: bundleName)
+            }.value
+            orphanedWorkspaces.removeAll { result.moved.contains(URL(fileURLWithPath: $0.path)) }
         }
     }
 

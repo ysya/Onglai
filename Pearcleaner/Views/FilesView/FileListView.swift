@@ -14,6 +14,26 @@ enum FileListViewMode: String {
     case categorized = "Categorized"
 }
 
+struct FileSelectionSummary {
+    let selected: Set<URL>
+    let visible: Set<URL>
+
+    init(selected: Set<URL>, visible: [URL]) {
+        self.selected = selected
+        self.visible = Set(visible)
+    }
+
+    var visibleSelectedCount: Int { selected.intersection(visible).count }
+    var hiddenSelectedCount: Int { selected.subtracting(visible).count }
+    var allVisibleSelected: Bool { !visible.isEmpty && visible.isSubset(of: selected) }
+
+    func togglingVisibleSelection() -> Set<URL> {
+        allVisibleSelected ? selected.subtracting(visible) : selected.union(visible)
+    }
+
+    func selectingOnlyVisible() -> Set<URL> { visible }
+}
+
 struct FileListView: View {
     @AppStorage("settings.interface.scrollIndicators") private var scrollIndicators: Bool = false
     @AppStorage("settings.general.brew") private var brew: Bool = false
@@ -24,8 +44,17 @@ struct FileListView: View {
     @Binding var infoSidebar: Bool
     @Binding var selectedSort: SortOptionList
     @Binding var viewMode: FileListViewMode
-    @State private var searchText: String = ""
-    @State private var selectedFileItemsLocal: Set<URL> = []
+    private var searchText: String {
+        get { appState.fileSearchText }
+        nonmutating set { appState.fileSearchText = newValue }
+    }
+    private var selectedFileItemsLocal: Set<URL> {
+        get { appState.selectedItems }
+        nonmutating set { appState.selectedItems = newValue }
+    }
+    private var selection: FileSelectionSummary {
+        FileSelectionSummary(selected: appState.selectedItems, visible: filteredFiles)
+    }
     @State private var memoizedFiles: [URL] = []
     @State private var lastRefreshDate: Date?
     @State private var collapsedCategories: Set<FileCategory> = []
@@ -110,7 +139,7 @@ struct FileListView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
 
-                        TextField("Search...", text: $searchText)
+                        TextField("Search...", text: $appState.fileSearchText)
                             .textFieldStyle(.plain)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
 
@@ -132,7 +161,7 @@ struct FileListView: View {
 
                     // Stats header
                     HStack {
-                        Text("\(selectedFileItemsLocal.count)/\(filteredFiles.count) file\(filteredFiles.count == 1 ? "" : "s")")
+                        Text("\(selection.visibleSelectedCount) of \(filteredFiles.count) visible items selected")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
 
@@ -148,6 +177,19 @@ struct FileListView: View {
                         }
                     }
                     .padding(.vertical)
+
+                    if selection.hiddenSelectedCount > 0 {
+                        HStack {
+                            Label("\(selection.hiddenSelectedCount) selected items are hidden by search", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                            Spacer()
+                            Button("Select Only Results") {
+                                appState.selectedItems = selection.selectingOnlyVisible()
+                            }
+                        }
+                        .foregroundStyle(.orange)
+                        .padding(.bottom, 8)
+                    }
 
                     // File list (simple or categorized based on viewMode)
                     ScrollView {
@@ -214,7 +256,7 @@ struct FileListView: View {
                             lastRefreshDate = Date()
                         }
                     }
-                    .onChange(of: appState.showProgress) { isShowing in
+                    .onChange(of: appState.isScanningApp) { isShowing in
                         // When scan completes (showProgress becomes false), update refresh date
                         if !isShowing && appState.appInfo.fileSize.keys.count > 0 {
                             lastRefreshDate = Date()
@@ -226,7 +268,7 @@ struct FileListView: View {
                             Spacer()
                             InfoButton(
                                 text:
-                                    "A trash error has occurred, please open the debug window(⌘+D) to see what went wrong or try again",
+                                    "Some files could not be moved. Check permissions and try again. Open details for technical information.",
                                 color: .orange, label: "View Error", warning: true,
                                 extraView: {
                                     Button("View Debug Window") {
@@ -247,19 +289,15 @@ struct FileListView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 20)
                 .safeAreaInset(edge: .bottom) {
-                    if !selectedFileItemsLocal.isEmpty {
+                    if !memoizedFiles.isEmpty {
                         HStack {
                             Spacer()
 
                             HStack(spacing: 10) {
-                                Button(selectedFileItemsLocal.count == filteredFiles.count ? "Deselect All" : "Select All") {
-                                    if selectedFileItemsLocal.count == filteredFiles.count {
-                                        selectedFileItemsLocal.removeAll()
-                                    } else {
-                                        selectedFileItemsLocal = Set(filteredFiles)
-                                    }
-                                    appState.selectedItems = selectedFileItemsLocal
+                                Button(selection.allVisibleSelected ? String(localized: "Deselect Results") : String(localized: "Select Results")) {
+                                    appState.selectedItems = selection.togglingVisibleSelection()
                                 }
+                                .disabled(filteredFiles.isEmpty)
                                 .buttonStyle(ControlGroupButtonStyle(
                                     foregroundColor: ThemeColors.shared(for: colorScheme).accent,
                                     shape: Capsule(style: .continuous),
@@ -273,11 +311,12 @@ struct FileListView: View {
                                     handleUninstallAction()
                                 } label: {
                                     Label {
-                                        Text("Delete \(totalSelectedSize)")
+                                        Text("Trash \(selectedFileItemsLocal.count) Items (\(totalSelectedSize))")
                                     } icon: {
                                         Image(systemName: "trash")
                                     }
                                 }
+                                .disabled(selectedFileItemsLocal.isEmpty || appState.isDeletingFiles)
                                 .buttonStyle(ControlGroupButtonStyle(
                                     foregroundColor: ThemeColors.shared(for: colorScheme).accent,
                                     shape: Capsule(style: .continuous),
@@ -322,6 +361,7 @@ struct FileListView: View {
                 .padding()
             }
         }
+        .disabled(appState.isDeletingFiles)
 
     }
 
@@ -375,7 +415,5 @@ struct FileListView: View {
     // Helper function to update memoized files
     private func updateMemoizedFiles() {
         memoizedFiles = sortedFiles
-        // Sync local selection with appState
-        selectedFileItemsLocal = appState.selectedItems
     }
 }

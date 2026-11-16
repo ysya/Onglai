@@ -16,6 +16,7 @@ struct DeleteHistoryView: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var selectedRecords = Set<UUID>()
     @State private var isRestoring = false
+    @State private var restoreError: String?
 
     var body: some View {
         StandardSheetView(
@@ -26,6 +27,11 @@ struct DeleteHistoryView: View {
                 appState.showDeleteHistory = false
             },
             content: {
+                if let restoreError {
+                    Label(restoreError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                }
                 if historyManager.history.isEmpty {
                     VStack {
                         Spacer()
@@ -137,6 +143,7 @@ struct DeleteHistoryView: View {
 
     private func restoreSelectedRecords() {
         isRestoring = true
+        restoreError = nil
 
         let recordsToRestore = historyManager.history.filter { selectedRecords.contains($0.id) }
 
@@ -179,6 +186,7 @@ struct DeleteHistoryView: View {
                 }
             } catch {
                 printOS("❌ Failed to restore records: \(error.localizedDescription)")
+                restoreError = String(localized: "Some files could not be restored. Check permissions and try again.")
                 isRestoring = false
             }
         }

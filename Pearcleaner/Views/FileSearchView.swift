@@ -763,23 +763,22 @@ struct FileSearchView: View {
 
         Task {
             GlobalConsoleManager.shared.appendOutput("Starting deletion of \(itemsToDelete.count) selected file(s)...\n", source: CurrentPage.fileSearch.title)
-            let success = await withCheckedContinuation { continuation in
+            let outcome = await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
                     let bundleName = "File Search (\(itemsToDelete.count) items)"
-                    let success = FileManagerUndo.shared.deleteFiles(at: urlsToDelete, bundleName: bundleName)
-                    continuation.resume(returning: success)
+                    let outcome = FileManagerUndo.shared.deleteFilesWithResult(at: urlsToDelete, bundleName: bundleName)
+                    continuation.resume(returning: outcome)
                 }
             }
 
             await MainActor.run {
-                if success {
-                    GlobalConsoleManager.shared.appendOutput("✓ Completed deletion of \(itemsToDelete.count) file(s)\n", source: CurrentPage.fileSearch.title)
-                    // Cache the deleted items before removing
-                    deletedItemsCache.append(contentsOf: itemsToDelete)
-                    let deletedIds = Set(itemsToDelete.map { $0.id })
-                    results.removeAll { deletedIds.contains($0.id) }
-                    selectedResults.removeAll()
-                } else {
+                let movedItems = itemsToDelete.filter { outcome.moved.contains($0.url) }
+                deletedItemsCache.append(contentsOf: movedItems)
+                let deletedIds = Set(movedItems.map { $0.id })
+                results.removeAll { deletedIds.contains($0.id) }
+                selectedResults.subtract(deletedIds)
+                GlobalConsoleManager.shared.appendOutput("Moved \(outcome.moved.count) file(s); \(outcome.failed.count) failed.\n", source: CurrentPage.fileSearch.title)
+                if !outcome.failed.isEmpty {
                     showCustomAlert(
                         title: "Deletion Failed",
                         message: "Failed to delete some selected files. They may require additional permissions or may not exist.",
