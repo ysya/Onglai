@@ -39,10 +39,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>me.ysya.Onglai</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>onglai</string>
+				<string>$(ONGLAI_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>

@@ -78,7 +78,7 @@ final class CatalogUpdateCheckerTests: XCTestCase {
         XCTAssertEqual(results.updates.count, 1)
         let update = results.updates.first
         XCTAssertEqual(update?.source, .catalog)
-        XCTAssertEqual(update?.externalURL, "https://formulae.brew.sh/cask/example")
+        XCTAssertNil(update?.externalURL)
         XCTAssertNil(update?.appInfo.cask)
         XCTAssertEqual(update?.isSelectedForUpdate, false)
         XCTAssertEqual(update?.canUpdate, false)
@@ -330,6 +330,17 @@ final class CatalogUpdateCheckerTests: XCTestCase {
         let result = await CatalogUpdateChecker.checkForUpdates(apps: [target], rules: rules) { [cask] }
         XCTAssertEqual(result.updates.first?.availableBuildNumber, "201")
         XCTAssertTrue(result.failures.isEmpty)
+    }
+
+    func testCatalogUpdateUsesThePublishersHomepageInsteadOfTheCatalogPage() async throws {
+        let data = Data(#"""
+        [{"token":"example","name":["Example"],"version":"2.0",
+          "homepage":"https://publisher.example.com/download",
+          "artifacts":[{"app":["Example.app"]},{"uninstall":[{"quit":"com.example.editor"}]}]}]
+        """#.utf8)
+        let entries = try CatalogUpdateChecker.parseCatalog(data)
+        let results = await catalogUpdates(apps: [app()]) { entries }
+        XCTAssertEqual(results.updates.first?.externalURL, "https://publisher.example.com/download")
     }
 
     private func catalogUpdates(apps: [AppInfo], loader: () async throws -> [CatalogCask]) async -> UpdateCheckResults {

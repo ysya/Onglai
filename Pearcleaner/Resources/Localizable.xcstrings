@@ -281,6 +281,23 @@
         }
       }
     },
+    "Official Update Page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "官方更新網頁"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "官方更新网页"
+          }
+        }
+      }
+    },
     "Official Updates" : {
       "localizations" : {
         "zh-Hant" : {

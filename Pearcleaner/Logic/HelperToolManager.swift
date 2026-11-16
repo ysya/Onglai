@@ -31,7 +31,7 @@ enum HelperToolAction {
 class HelperToolManager: ObservableObject {
     static let shared = HelperToolManager()
     private var helperConnection: NSXPCConnection?
-    let helperToolIdentifier = "me.ysya.Onglai.Helper"
+    let helperToolIdentifier = OnglaiIdentity.helperIdentifier
     @Published var isHelperToolInstalled: Bool = false
     @Published var message: String = String(localized: "Checking...")
     @Published var isInitialCheckComplete: Bool = false

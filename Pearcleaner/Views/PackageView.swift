@@ -1250,7 +1250,7 @@ private func runDirectShellCommandWithTimeout(command: String, timeout: TimeInte
 }
 
 private func runFastShellCommand(command: String) -> (Bool, String) {
-    let tempFile = "/tmp/pearcleaner_getBOMlist_\(UUID().uuidString)"
+    let tempFile = "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)_getBOMlist_\(UUID().uuidString)"
     let redirectedCommand = "\(command) > \"\(tempFile)\" 2>&1"
     
     let process = Process()

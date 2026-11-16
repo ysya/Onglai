@@ -113,7 +113,7 @@ struct UpdateableApp: Identifiable, Hashable {
     let source: UpdateSource
     let adamID: UInt64?
     let appStoreURL: String?  // Store URL from iTunes API for "Open in App Store" button
-    var externalURL: String? = nil  // Trusted provider page or download URL opened outside Onglai
+    var externalURL: String? = nil  // Official website offered separately from opening the installed app
     var status: UpdateStatus = .idle
     var progress: Double = 0.0
     var isSelectedForUpdate: Bool = true  // Default to selected for "Update All" queue
@@ -133,6 +133,16 @@ struct UpdateableApp: Identifiable, Hashable {
 
     var canUpdate: Bool {
         source == .homebrew || source == .sparkle
+    }
+
+    var officialUpdateURL: URL? {
+        guard source.isExternalUpdate, let externalURL,
+              let url = URL(string: externalURL),
+              url.scheme?.lowercased() == "https",
+              let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil,
+              host.lowercased() != "formulae.brew.sh" else { return nil }
+        return url
     }
 
     /// Unique identifier for tracking hidden apps

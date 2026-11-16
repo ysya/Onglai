@@ -616,7 +616,7 @@ func handleLaunchMode() {
     // shadow the real settings.
     if Bundle.main.bundleIdentifier == nil {
         UserDefaults.standard.removePersistentDomain(forName: ProcessInfo.processInfo.processName)
-        UserDefaults.standard.addSuite(named: "me.ysya.Onglai")
+        UserDefaults.standard.addSuite(named: OnglaiIdentity.bundleIdentifier)
     }
 
     var arguments = CommandLine.arguments
@@ -839,7 +839,7 @@ func manageFinderPlugin(install: Bool) {
     let task = Process()
     task.launchPath = "/usr/bin/pluginkit"
 
-    task.arguments = ["-e", "\(install ? "use" : "ignore")", "-i", "me.ysya.Onglai.FinderOpen"]
+    task.arguments = ["-e", "\(install ? "use" : "ignore")", "-i", OnglaiIdentity.finderIdentifier]
 
     task.launch()
     task.waitUntilExit()
@@ -1407,7 +1407,7 @@ func uninstallPearcleaner(appState: AppState, locations: Locations) {
 
 // --- Load Plist file with SMAppService ---
 func launchctl(load: Bool, completion: @escaping () -> Void = {}) {
-    let service = SMAppService.agent(plistName: "me.ysya.Onglai.Sentinel.plist")
+    let service = SMAppService.agent(plistName: OnglaiIdentity.sentinelIdentifier + ".plist")
 
     if load {
         do {
@@ -1456,7 +1456,7 @@ func createTarArchive(appState: AppState) {
 
     do {
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "Bundle-" + appState.appInfo.appName)
+            (OnglaiIdentity.isDebug ? "onglai-debug-Bundle-" : "Bundle-") + appState.appInfo.appName)
 
         // Create a temporary directory to organize the paths
         try FileManager.default.createDirectory(

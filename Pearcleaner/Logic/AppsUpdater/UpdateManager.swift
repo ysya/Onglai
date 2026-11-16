@@ -69,6 +69,7 @@ class UpdateManager: ObservableObject {
     private var showCurrent: Bool { display.showCurrent }
 
     private let defaults: UserDefaults
+    private let openURL: (URL) -> Bool
     private var hasAutoScannedOnce = false
     private var pendingScanSources: Set<UpdateSource> = []
     private var managedSparkleOverrides: [URL: ManagedUpdateMechanism] = [:]
@@ -109,8 +110,10 @@ class UpdateManager: ObservableObject {
         }
     }
 
-    init(defaults: UserDefaults = .standard, observesAppLoading: Bool = true) {
+    init(defaults: UserDefaults = .standard, observesAppLoading: Bool = true,
+         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         self.defaults = defaults
+        self.openURL = openURL
         _sourcesData = AppStorage(wrappedValue: UpdaterSourcesSettings.defaultEncoded(), "settings.updater.sources", store: defaults)
         _displayData = AppStorage(wrappedValue: UpdaterDisplaySettings.defaultEncoded(), "settings.updater.display", store: defaults)
         _debugLogging = AppStorage(wrappedValue: false, "settings.updater.debugLogging", store: defaults)
@@ -1147,23 +1150,8 @@ class UpdateManager: ObservableObject {
                 UpdateQueue.shared.addOperation(operation)
             }
 
-        case .electron, .official, .catalog:
-            guard let rawURL = app.externalURL,
-                  let url = URL(string: rawURL),
-                  url.scheme?.lowercased() == "https",
-                  NSWorkspace.shared.open(url) else {
-                let message = "Could not open this app's official update page"
-                updateStatus(for: app, status: .failed(message), progress: 0)
-                GlobalConsoleManager.shared.appendOutput("✗ \(message): \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
-                return
-            }
-            GlobalConsoleManager.shared.appendOutput(
-                "Opened the official update page for \(app.appInfo.appName).\n",
-                source: CurrentPage.updater.title
-            )
-
-        case .managed:
-            guard NSWorkspace.shared.open(app.appInfo.path) else {
+        case .electron, .official, .catalog, .managed:
+            guard openURL(app.appInfo.path) else {
                 let message = "Could not open this app"
                 updateStatus(for: app, status: .failed(message), progress: 0)
                 GlobalConsoleManager.shared.appendOutput("✗ \(message): \(app.appInfo.appName)\n", source: CurrentPage.updater.title)
@@ -1184,6 +1172,22 @@ class UpdateManager: ObservableObject {
             UpdaterDebugLogger.shared.log(.sparkle, "ℹ️ App is already current: \(app.appInfo.appName)")
             break
         }
+    }
+
+    @discardableResult
+    func openOfficialUpdatePage(for app: UpdateableApp) -> Bool {
+        guard let url = app.officialUpdateURL, openURL(url) else {
+            GlobalConsoleManager.shared.appendOutput(
+                "✗ Could not open this app's official update page: \(app.appInfo.appName)\n",
+                source: CurrentPage.updater.title
+            )
+            return false
+        }
+        GlobalConsoleManager.shared.appendOutput(
+            "Opened the official update page for \(app.appInfo.appName).\n",
+            source: CurrentPage.updater.title
+        )
+        return true
     }
 
     /// Update an iOS app from the App Store

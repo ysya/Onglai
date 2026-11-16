@@ -12,7 +12,7 @@ import Security
 class KeychainPasswordManager {
     static let shared = KeychainPasswordManager()
 
-    private let service = "me.ysya.Onglai.SudoPassword"
+    private let service = OnglaiIdentity.bundleIdentifier + ".SudoPassword"
     private let account: String
 
     private init() {

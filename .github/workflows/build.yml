@@ -20,6 +20,21 @@ jobs:
       - name: Show toolchain
         run: xcodebuild -version
 
+      - name: Build test host
+        run: |
+          xcodebuild \
+            -project Pearcleaner.xcodeproj \
+            -scheme "Pearcleaner Debug" \
+            -configuration Debug \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath build-tests \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet \
+            build-for-testing
+
+      - name: Verify isolated test host identity
+        run: python3 scripts/verify-build-identity.py build-tests/Build/Products/Debug/Onglai.app --configuration Debug
+
       - name: Test
         run: |
           xcodebuild \
@@ -30,7 +45,7 @@ jobs:
             -derivedDataPath build-tests \
             CODE_SIGNING_ALLOWED=NO \
             -quiet \
-            test
+            test-without-building
 
       # Compile-and-link check only. Code signing is skipped because the app
       # group entitlement is team-restricted and CI has no signing identity;
@@ -45,3 +60,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             -quiet \
             build
+
+      - name: Verify release identity
+        run: python3 scripts/verify-build-identity.py build/Build/Products/Release/Onglai.app --configuration Release

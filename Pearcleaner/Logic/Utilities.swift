@@ -43,9 +43,9 @@ func playTrashSound(undo: Bool = false) {
 }
 
 
-// Check if pear symlink exists
-func checkCLISymlink() -> Bool {
-    let filePath = "/usr/local/bin/pear"
+// Check only the current variant's CLI symlink.
+func checkCLISymlink(in directory: URL = URL(fileURLWithPath: "/usr/local/bin")) -> Bool {
+    let filePath = directory.appendingPathComponent(OnglaiIdentity.cliName).path
     let fileManager = FileManager.default
 
     guard fileManager.fileExists(atPath: filePath) else { return false }
@@ -60,6 +60,8 @@ func checkCLISymlink() -> Bool {
 
 // Fix legacy pearcleaner symlink if it exists
 func fixLegacySymlink() {
+    guard !OnglaiIdentity.isDebug else { return }
+
     let legacyPath = "/usr/local/bin/pearcleaner"
     let fileManager = FileManager.default
     if fileManager.fileExists(atPath: legacyPath) {
@@ -69,7 +71,7 @@ func fixLegacySymlink() {
 }
 
 // Install/uninstall symlink for CLI
-func manageSymlink(install: Bool, symlinkName: String = "ong") {
+func manageSymlink(install: Bool, symlinkName: String = OnglaiIdentity.cliName) {
     @AppStorage("settings.general.cli") var isCLISymlinked = false
 
     guard let appPath = Bundle.main.executablePath else {
@@ -129,11 +131,9 @@ func directoryExists(at path: String) -> Bool {
     return fileManager.fileExists(atPath: path, isDirectory: nil)
 }
 
-/// Clean up all stale /tmp/pearcleaner* directories
+/// Clean up temporary directories belonging to the current build variant.
 /// Used before creating new temp directories to avoid conflicts from previous failed operations
-func cleanupPearcleanerTempDirs() {
-    let tmpDir = URL(fileURLWithPath: "/tmp")
-
+func cleanupPearcleanerTempDirs(in tmpDir: URL = URL(fileURLWithPath: "/tmp")) {
     guard let contents = try? FileManager.default.contentsOfDirectory(
         at: tmpDir,
         includingPropertiesForKeys: nil
@@ -141,7 +141,7 @@ func cleanupPearcleanerTempDirs() {
         return
     }
 
-    for item in contents where item.lastPathComponent.hasPrefix("pearcleaner") {
+    for item in contents where item.lastPathComponent.hasPrefix(OnglaiIdentity.temporaryDirectoryPrefix) {
         try? FileManager.default.removeItem(at: item)
     }
 }
@@ -749,11 +749,11 @@ extension String {
 }
 
 func sendStartNotificationFW() {
-    DistributedNotificationCenter.default().postNotificationName(Notification.Name("Pearcleaner.StartFileWatcher"), object: nil, userInfo: nil, deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(Notification.Name(OnglaiIdentity.watcherStart), object: nil, userInfo: nil, deliverImmediately: true)
 }
 
 func sendStopNotificationFW() {
-    DistributedNotificationCenter.default().postNotificationName(Notification.Name("Pearcleaner.StopFileWatcher"), object: nil, userInfo: nil, deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(Notification.Name(OnglaiIdentity.watcherStop), object: nil, userInfo: nil, deliverImmediately: true)
 }
 
 func formatRelativeTime(_ date: Date) -> String {

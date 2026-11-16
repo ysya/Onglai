@@ -124,7 +124,7 @@ enum ElectronUpdateChecker {
                 return .current(app.path)
             }
 
-            let externalURL = metadata.releasePageURL ?? metadata.downloadURL ?? configuration.fallbackExternalURL
+            let externalURL = metadata.releasePageURL ?? configuration.fallbackExternalURL
             logger.log(.electron, "Update found: \(app.appName) \(app.appVersion) → \(metadata.version)")
             return .update(UpdateableApp(
                 appInfo: app,

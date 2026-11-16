@@ -71,6 +71,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Hosted unit tests must not probe privacy-protected folders or perform
+        // startup maintenance against the user's running application.
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+
         NSWindow.allowsAutomaticWindowTabbing = false
 
         // Register as services provider (required for NSServices to work)
@@ -118,7 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // Open deep link for each app - DeeplinkManager will queue and process them sequentially
         for appURL in appURLs {
-            if let deepLinkURL = URL(string: "onglai://me.ysya.Onglai?path=\(appURL.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? appURL.path)") {
+            if let deepLinkURL = URL(string: "\(OnglaiIdentity.urlScheme)://\(OnglaiIdentity.bundleIdentifier)?path=\(appURL.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? appURL.path)") {
                 NSWorkspace.shared.open(deepLinkURL)
             }
         }

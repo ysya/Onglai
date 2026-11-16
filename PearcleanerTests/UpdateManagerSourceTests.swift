@@ -3,6 +3,61 @@ import XCTest
 
 @MainActor
 final class UpdateManagerSourceTests: XCTestCase {
+    func testExternalUpdatesOpenTheInstalledAppWithOrWithoutAWebsite() async {
+        var opened: [URL] = []
+        let manager = manager(openURL: { opened.append($0); return true })
+        let target = app("external")
+        for source in [UpdateSource.electron, .official, .catalog] {
+            for website in [nil, "https://publisher.example.com/releases"] {
+                var candidate = update(target, source: source)
+                candidate.externalURL = website
+                await manager.updateApp(candidate)
+            }
+        }
+        XCTAssertEqual(opened, Array(repeating: target.path, count: 6))
+    }
+
+    func testOfficialPageActionOpensOnlyTheSeparateOfficialPage() async {
+        var opened: [URL] = []
+        let manager = manager(openURL: { opened.append($0); return true })
+        let target = app("external")
+        var candidate = update(target, source: .catalog)
+        candidate.externalURL = "https://publisher.example.com/releases"
+        await manager.updateApp(candidate)
+        XCTAssertEqual(opened, [target.path])
+        XCTAssertTrue(manager.openOfficialUpdatePage(for: candidate))
+        XCTAssertEqual(opened, [target.path, URL(string: "https://publisher.example.com/releases")!])
+    }
+
+    func testOfficialPageActionRejectsMissingUnsafeAndCatalogURLs() {
+        var opened: [URL] = []
+        let manager = manager(openURL: { opened.append($0); return true })
+        var authenticatedPage = URLComponents(string: "https://publisher.example.com/releases")!
+        authenticatedPage.user = "fixture-user"
+        authenticatedPage.password = "fixture-password"
+        for website in [nil, "http://publisher.example.com/releases", "file:///tmp/installer",
+                        authenticatedPage.url?.absoluteString,
+                        "https://formulae.brew.sh/cask/example"] {
+            var candidate = update(app("external"), source: .catalog)
+            candidate.externalURL = website
+            XCTAssertNil(candidate.officialUpdateURL)
+            XCTAssertFalse(manager.openOfficialUpdatePage(for: candidate))
+        }
+        XCTAssertTrue(opened.isEmpty)
+    }
+
+    func testFailedExternalAppLaunchReportsFailureWithoutOpeningItsWebsite() async {
+        var opened: [URL] = []
+        let manager = manager(openURL: { opened.append($0); return false })
+        let target = app("external")
+        var candidate = update(target, source: .official)
+        candidate.externalURL = "https://publisher.example.com/releases"
+        manager.updatesBySource[.official] = [candidate]
+        await manager.updateApp(candidate)
+        XCTAssertEqual(opened, [target.path])
+        XCTAssertEqual(manager.updatesBySource[.official]?.first?.status, .failed("Could not open this app"))
+    }
+
     func testSingleAppRecheckPreservesOtherAppsFailuresAndCurrentEvidence() {
         let manager = manager()
         let first = app("first")
@@ -224,12 +279,13 @@ final class UpdateManagerSourceTests: XCTestCase {
         XCTAssertFalse(manager.isConfirmedCurrent(target))
     }
 
-    private func manager(ignored: [String: [String: String?]] = [:]) -> UpdateManager {
+    private func manager(ignored: [String: [String: String?]] = [:],
+                         openURL: @escaping (URL) -> Bool = { _ in true }) -> UpdateManager {
         let suiteName = "UpdateManagerSourceTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.set(try! JSONEncoder().encode(ignored), forKey: "settings.updater.ignoredAppsData")
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
-        return UpdateManager(defaults: defaults, observesAppLoading: false)
+        return UpdateManager(defaults: defaults, observesAppLoading: false, openURL: openURL)
     }
 
     private func failure(_ app: AppInfo) -> UpdateCheckFailure {

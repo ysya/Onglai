@@ -10,7 +10,7 @@ import AppKit
 import OSLog
 
 private let logger = Logger(
-    subsystem: "me.ysya.Onglai",
+    subsystem: OnglaiIdentity.bundleIdentifier,
     category: "Sentinel"
 )
 
@@ -48,11 +48,11 @@ func stopGlobalFileWatcher() {
 
 func setupNotificationListener() {
     let notificationCenter = DistributedNotificationCenter.default()
-    notificationCenter.addObserver(forName: Notification.Name("Pearcleaner.StartFileWatcher"), object: nil, queue: nil) { _ in
+    notificationCenter.addObserver(forName: Notification.Name(OnglaiIdentity.watcherStart), object: nil, queue: nil) { _ in
         logger.debug("Received start notification")
         startGlobalFileWatcher()
     }
-    notificationCenter.addObserver(forName: Notification.Name("Pearcleaner.StopFileWatcher"), object: nil, queue: nil) { _ in
+    notificationCenter.addObserver(forName: Notification.Name(OnglaiIdentity.watcherStop), object: nil, queue: nil) { _ in
         logger.debug("Received stop notification")
         stopGlobalFileWatcher()
     }
@@ -78,13 +78,13 @@ func checkApp(file: String) {
         return
     }
 
-    guard appBundle.bundleIdentifier != "me.ysya.Onglai" else {
+    guard appBundle.bundleIdentifier != OnglaiIdentity.bundleIdentifier else {
         logger.debug("Ignoring Pearcleaner's own app bundle")
         return
     }
 
     var components = URLComponents()
-    components.scheme = "onglai"
+    components.scheme = OnglaiIdentity.urlScheme
     components.host = "openApp"
     components.queryItems = [URLQueryItem(name: "path", value: file)]
 

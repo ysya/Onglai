@@ -72,7 +72,7 @@ class UndoHistoryManager: ObservableObject {
     private init() {
         // Store in Application Support folder
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let pearcleanerDir = appSupport.appendingPathComponent("Pearcleaner")
+        let pearcleanerDir = appSupport.appendingPathComponent(OnglaiIdentity.supportDirectoryName)
 
         // Create directory if needed
         try? FileManager.default.createDirectory(at: pearcleanerDir, withIntermediateDirectories: true)

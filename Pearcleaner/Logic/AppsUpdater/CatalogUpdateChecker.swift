@@ -4,6 +4,7 @@ struct CatalogCask: Sendable {
     let token: String
     let names: [String]
     let version: String?
+    let homepage: String?
     let bundleVersion: String?
     let bundleShortVersion: String?
     let appNames: [String]
@@ -14,13 +15,14 @@ struct CatalogCask: Sendable {
     let architectures: [String]?
     let macOSVersions: [String]?
 
-    init(token: String, names: [String], version: String?, bundleVersion: String? = nil,
+    init(token: String, names: [String], version: String?, homepage: String? = nil, bundleVersion: String? = nil,
          bundleShortVersion: String? = nil, appNames: [String] = [], bundleIdentifiers: Set<String> = [],
          isDeprecated: Bool = false, isDisabled: Bool = false,
          minimumMacOSVersion: String? = nil, architectures: [String]? = nil, macOSVersions: [String]? = nil) {
         self.token = token
         self.names = names
         self.version = version
+        self.homepage = homepage
         self.bundleVersion = bundleVersion
         self.bundleShortVersion = bundleShortVersion
         self.appNames = appNames
@@ -141,7 +143,7 @@ enum CatalogUpdateChecker {
                 results.updates.append(UpdateableApp(
                     appInfo: app, availableVersion: projection.displayVersion ?? remote, availableBuildNumber: verifiedBuild,
                     source: .catalog, adamID: nil, appStoreURL: nil,
-                    externalURL: "https://formulae.brew.sh/cask/\(cask.token)",
+                    externalURL: cask.homepage,
                     isSelectedForUpdate: false, releaseTitle: nil, releaseDescription: nil,
                     releaseNotesLink: nil, releaseDate: nil,
                     isPreRelease: UpdateVersionComparator.channel(for: remote) != "stable",
@@ -248,6 +250,7 @@ enum CatalogUpdateChecker {
             }
             return CatalogCask(
                 token: token, names: object["name"] as? [String] ?? [], version: object["version"] as? String,
+                homepage: object["homepage"] as? String,
                 bundleVersion: object["bundle_version"] as? String, bundleShortVersion: object["bundle_short_version"] as? String,
                 appNames: artifacts.flatMap(appNames),
                 bundleIdentifiers: bundleIDs, isDeprecated: object["deprecated"] as? Bool ?? false,

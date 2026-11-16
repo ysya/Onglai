@@ -117,7 +117,7 @@ class IOSAppInstaller {
         progress(0.95, "Installing...")
 
         // Remove entire temp directory (includes extracted IPA and hard link)
-        let tempDir = "/tmp/pearcleaner-ios-\(adamID)"
+        let tempDir = "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-ios-\(adamID)"
         if FileManager.default.fileExists(atPath: tempDir) {
             try? FileManager.default.removeItem(atPath: tempDir)
         }
@@ -163,7 +163,7 @@ class IOSAppInstaller {
     /// Extract IPA to temp directory
     private static func extractIPA(ipaPath: String, adamID: UInt64) async throws -> URL {
 
-        let extractDir = URL(fileURLWithPath: "/tmp/pearcleaner-ios-\(adamID)/extracted")
+        let extractDir = URL(fileURLWithPath: "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-ios-\(adamID)/extracted")
 
         // Create extraction directory
         try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
@@ -349,7 +349,7 @@ class IOSAppInstaller {
         adamID: UInt64
     ) throws -> URL {
 
-        let wrapperDir = URL(fileURLWithPath: "/tmp/pearcleaner-ios-\(adamID)/Wrapper")
+        let wrapperDir = URL(fileURLWithPath: "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-ios-\(adamID)/Wrapper")
         try FileManager.default.createDirectory(at: wrapperDir, withIntermediateDirectories: true)
 
         // Copy extracted app to Wrapper/
@@ -384,7 +384,7 @@ class IOSAppInstaller {
         let normalizedPath = normalizeToOuterWrapper(existingAppPath)
 
         let oldWrapper = normalizedPath.appendingPathComponent("Wrapper")
-        let backupWrapper = URL(fileURLWithPath: "/tmp/pearcleaner-ios-backup-\(UUID().uuidString)")
+        let backupWrapper = URL(fileURLWithPath: "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-ios-backup-\(UUID().uuidString)")
         let symlinkPath = normalizedPath.appendingPathComponent("WrappedBundle")
 
         // Script 1: Atomic replacement (all commands chained with &&)

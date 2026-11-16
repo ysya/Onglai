@@ -59,6 +59,9 @@
 		C7F539382AF60865007DF1B2 /* Utilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7F539372AF60865007DF1B2 /* Utilities.swift */; };
 		C7F8436B2CBF066F00E3E30A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C7F8436A2CBF066F00E3E30A /* Localizable.xcstrings */; };
 		C7FBD9DF2DAD66D500151934 /* AlinFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = C7C90DDD2DA8221B0056769A /* AlinFoundation */; };
+		01A551000000000000000002 /* OnglaiIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A551000000000000000001 /* OnglaiIdentity.swift */; };
+		01A551000000000000000003 /* OnglaiIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A551000000000000000001 /* OnglaiIdentity.swift */; };
+		01A551000000000000000004 /* OnglaiIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A551000000000000000001 /* OnglaiIdentity.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -195,6 +198,7 @@
 		C7DD49ED2BAB7F6000CCBA16 /* ReversePathsFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReversePathsFetch.swift; sourceTree = "<group>"; };
 		C7F539372AF60865007DF1B2 /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
 		C7F8436A2CBF066F00E3E30A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		01A551000000000000000001 /* OnglaiIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/OnglaiIdentity.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -384,6 +388,7 @@
 		C77B8FF72AF18E2E009CC655 = {
 			isa = PBXGroup;
 			children = (
+				01A551000000000000000001 /* OnglaiIdentity.swift */,
 				C75E82DD2E8C58380090C3B1 /* Shared */,
 				C77B90022AF18E2E009CC655 /* Pearcleaner */,
 				01A000000000000000000012 /* PearcleanerTests */,
@@ -701,14 +706,19 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/scripts/configure-launch-services.py",
+				"$(SRCROOT)/PearcleanerHelper/me.ysya.Onglai.Helper.plist",
+				"$(SRCROOT)/PearcleanerSentinel/me.ysya.Onglai.Sentinel.plist",
 			);
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/LaunchDaemons",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/LaunchAgents",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "chmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Resources/askpass.sh\"\n";
+			shellScript = "chmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Resources/askpass.sh\"\n/usr/bin/python3 \"${SRCROOT}/scripts/configure-launch-services.py\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -724,6 +734,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01A551000000000000000004 /* OnglaiIdentity.swift in Sources */,
 				C78733BF2E674510008615F2 /* FileWatcher.swift in Sources */,
 				C72893122AFD51EA00C8C1CD /* main.swift in Sources */,
 			);
@@ -741,6 +752,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01A551000000000000000002 /* OnglaiIdentity.swift in Sources */,
 				01A000000000000000000023 /* AppLoadCoordinator.swift in Sources */,
 				01A000000000000000000021 /* DeletionSafetyPolicy.swift in Sources */,
 				C78FF5E12EC1A3B400FC610A /* PasswordRequestHandler.swift in Sources */,
@@ -779,6 +791,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01A551000000000000000003 /* OnglaiIdentity.swift in Sources */,
 				C78121662BC892A000BE06BD /* FinderOpen.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -868,7 +881,8 @@
 				INSTALL_PATH = "";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = "$(APP_VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Sentinel;
+				OTHER_CODE_SIGN_FLAGS = "--identifier $(PRODUCT_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Debug.Sentinel;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -914,7 +928,8 @@
 				INSTALL_PATH = "";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = "$(APP_VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Helper;
+				OTHER_CODE_SIGN_FLAGS = "--identifier $(PRODUCT_BUNDLE_IDENTIFIER)";
+				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Debug.Helper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "";
@@ -1009,7 +1024,8 @@
 				MARKETING_VERSION = 4.4.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
-				ONGLAI_APP_GROUP_IDENTIFIER = "$(DEVELOPMENT_TEAM).group.onglai";
+				ONGLAI_APP_GROUP_IDENTIFIER = "$(DEVELOPMENT_TEAM).group.onglai.debug";
+				ONGLAI_URL_SCHEME = "onglai-debug";
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1078,6 +1094,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONGLAI_APP_GROUP_IDENTIFIER = "$(DEVELOPMENT_TEAM).group.onglai";
+				ONGLAI_URL_SCHEME = onglai;
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -1115,7 +1132,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Pearcleaner/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Onglai;
+				INFOPLIST_KEY_CFBundleDisplayName = "Onglai Debug";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSSystemAdministrationUsageDescription = "Onglai requires full disk access to be able to delete files in locations with no permission";
@@ -1129,7 +1146,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "-Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/CommerceKit/module.modulemap -Xcc -fmodule-map-file=$(SRCROOT)/Pearcleaner/Logic/AppsUpdater/PrivateFrameworks/StoreFoundation/module.modulemap";
-				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai;
+				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Debug;
 				PRODUCT_NAME = Onglai;
 				PRODUCT_MODULE_NAME = Pearcleaner;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1230,7 +1247,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = "$(APP_VERSION)";
-				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.FinderOpen;
+				PRODUCT_BUNDLE_IDENTIFIER = me.ysya.Onglai.Debug.FinderOpen;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";

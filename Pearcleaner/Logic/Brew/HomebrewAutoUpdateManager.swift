@@ -103,9 +103,9 @@ class HomebrewAutoUpdateManager: ObservableObject {
     var originalRunUpgrade: Bool = false
     var originalRunCleanup: Bool = false
 
-    private let plistPath = "\(NSHomeDirectory())/Library/LaunchAgents/me.ysya.Onglai.homebrew-autoupdate.plist"
-    private let label = "me.ysya.Onglai.homebrew-autoupdate"
-    let logPath = "/tmp/homebrew-autoupdate.log"
+    private let plistPath = "\(NSHomeDirectory())/Library/LaunchAgents/\(OnglaiIdentity.bundleIdentifier).homebrew-autoupdate.plist"
+    private let label = OnglaiIdentity.bundleIdentifier + ".homebrew-autoupdate"
+    let logPath = OnglaiIdentity.isDebug ? "/tmp/onglai-debug-homebrew-autoupdate.log" : "/tmp/homebrew-autoupdate.log"
 
     private init() {
         loadSchedule()
@@ -543,7 +543,7 @@ class HomebrewAutoUpdateManager: ObservableObject {
         scriptLines.append("echo \"================================\"")
 
         // Wrap in braces for single execution block and redirect to overwrite log file
-        let scriptBlock = "{ " + scriptLines.joined(separator: "; ") + "; } > /tmp/homebrew-autoupdate.log 2>&1"
+        let scriptBlock = "{ " + scriptLines.joined(separator: "; ") + "; } > \(logPath) 2>&1"
 
         // Escape XML special characters for plist
         let escapedCommand = scriptBlock

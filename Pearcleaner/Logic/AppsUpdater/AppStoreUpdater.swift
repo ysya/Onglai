@@ -396,7 +396,7 @@ private final class IOSDownloadObserver: NSObject, CKDownloadQueueObserver {
         guard !iosFilesPreserved else { return }
 
         let downloadDir = "\(CKDownloadDirectory(nil))/\(adamID)"
-        let tempDir = "/tmp/pearcleaner-ios-\(adamID)"
+        let tempDir = "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-ios-\(adamID)"
 
         do {
             // Create temp directory
@@ -540,7 +540,7 @@ private final class MacOSDownloadObserverWithWorkaround: NSObject, CKDownloadQue
     private func createHardLinkToPKG() {
 
         let downloadDir = "\(CKDownloadDirectory(nil))/\(adamID)"
-        let tempDir = "/tmp/pearcleaner-appstore-\(adamID)"
+        let tempDir = "/tmp/\(OnglaiIdentity.temporaryDirectoryPrefix)-appstore-\(adamID)"
 
         do {
             // Create temp directory

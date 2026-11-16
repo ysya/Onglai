@@ -25,7 +25,7 @@ class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
     override init() {
         do {
             let teamIdentifier = try CodesignCheck.codeSigningTeamIdentifierForSelf()
-            clientCodeSigningRequirement = "anchor apple generic and identifier \"me.ysya.Onglai\" and certificate leaf[subject.OU] = \(teamIdentifier)"
+            clientCodeSigningRequirement = "anchor apple generic and identifier \"\(OnglaiIdentity.bundleIdentifier)\" and certificate leaf[subject.OU] = \(teamIdentifier)"
         } catch {
             fatalError("Unable to establish the helper client identity: \(error)")
         }
@@ -144,7 +144,7 @@ class HelperToolDelegate: NSObject, NSXPCListenerDelegate, HelperToolProtocol {
 
 // Set up and start the XPC listener.
 let delegate = HelperToolDelegate()
-let listener = NSXPCListener(machServiceName: "me.ysya.Onglai.Helper")
+let listener = NSXPCListener(machServiceName: OnglaiIdentity.helperIdentifier)
 listener.delegate = delegate
 listener.resume()
 RunLoop.main.run()

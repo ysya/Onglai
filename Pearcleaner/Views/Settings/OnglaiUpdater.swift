@@ -181,6 +181,8 @@ final class OnglaiUpdater: ObservableObject {
     }
 
     func checkForUpdates() async {
+        // A development host must never install the production app over itself.
+        guard !OnglaiIdentity.isDebug else { return }
         startSparkleIfNeeded()
         guard state != .checking else { return }
         state = .checking
@@ -244,6 +246,8 @@ final class OnglaiUpdater: ObservableObject {
     }
 
     func installLatestRelease() {
+        // A development host must never install the production app over itself.
+        guard !OnglaiIdentity.isDebug else { return }
         startSparkleIfNeeded()
         sparkleController.checkForUpdates(nil)
     }
@@ -267,6 +271,8 @@ final class OnglaiUpdater: ObservableObject {
     }
 
     private func startSparkleIfNeeded() {
+        // A development host must never install the production app over itself.
+        guard !OnglaiIdentity.isDebug else { return }
         guard !didStartSparkle else { return }
         didStartSparkle = true
         sparkleController.startUpdater()

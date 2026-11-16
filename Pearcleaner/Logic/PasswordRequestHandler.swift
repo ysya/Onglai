@@ -22,7 +22,7 @@ class PasswordRequestHandler {
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(handlePasswordRequest(_:)),
-            name: NSNotification.Name("me.ysya.Onglai.passwordRequest"),
+            name: NSNotification.Name(OnglaiIdentity.passwordRequest),
             object: nil
         )
     }
@@ -40,7 +40,7 @@ class PasswordRequestHandler {
 
             // Send response back
             DistributedNotificationCenter.default().postNotificationName(
-                NSNotification.Name("me.ysya.Onglai.passwordResponse"),
+                NSNotification.Name(OnglaiIdentity.passwordResponse),
                 object: nil,
                 userInfo: [
                     "requestId": requestId,

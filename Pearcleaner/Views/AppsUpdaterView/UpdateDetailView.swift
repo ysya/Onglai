@@ -171,6 +171,18 @@ struct UpdateDetailView: View {
                                 .id(app.id)
                             }
 
+                            if app.officialUpdateURL != nil {
+                                Button {
+                                    updateManager.openOfficialUpdatePage(for: app)
+                                } label: {
+                                    Image(systemName: "globe")
+                                        .font(.title3)
+                                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Official Update Page")
+                            }
+
                             // Unsupported indicator
                             if app.source == .unsupported {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -436,7 +448,7 @@ struct UpdateDetailView: View {
                 Task { await updateManager.updateApp(app) }
             }
         } label: {
-            Text(app.source.isExternalUpdate ? "View Update" :
+            Text(app.source.isExternalUpdate ? "Open App" :
                  app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
         .buttonStyle(.plain)
@@ -536,18 +548,18 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.source.isExternalUpdate ? "View Update" :
+                title: app.source.isExternalUpdate ? String(localized: "Open App") :
                        app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
                 foregroundColor: .white,
                 backgroundColor: .green,
-                isDisabled: app.status != .idle || (app.source.isExternalUpdate && app.externalURL == nil),
+                isDisabled: app.status != .idle,
                 action: {
                     if app.isIOSApp, let appStoreURL = app.appStoreURL {
                         openInAppStore(urlString: appStoreURL)
                     } else if isNonPrimaryRegion, let appStoreURL = app.appStoreURL {
                         openInAppStore(urlString: appStoreURL)
-                    } else if app.appInfo.isAppStore && app.source != .appStore {
-                        // Warn for ANY non-App Store update (Sparkle, Homebrew, etc.)
+                    } else if app.appInfo.isAppStore && app.canUpdate {
+                        // Only in-place installers can replace an App Store receipt.
                         showMASWarning = true
                     } else {
                         Task { await updateManager.updateApp(app) }
@@ -556,6 +568,15 @@ struct UpdateDetailView: View {
             )
 
             var secondaryActions: [ActionButtonItem] = []
+
+            if app.officialUpdateURL != nil {
+                secondaryActions.append(ActionButtonItem(
+                    title: "Official Update Page",
+                    foregroundColor: ThemeColors.shared(for: colorScheme).accent,
+                    backgroundColor: ThemeColors.shared(for: colorScheme).secondaryBG,
+                    action: { updateManager.openOfficialUpdatePage(for: app) }
+                ))
+            }
 
             // Skip button
             if let availableVersion = app.availableVersion {
