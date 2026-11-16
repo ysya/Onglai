@@ -22,12 +22,7 @@ def main():
 
         destination = contents / "Library" / directory
         destination.mkdir(parents=True, exist_ok=True)
-        original = destination / original_name
         output = destination / f"{label}.plist"
-        # Copy Files supplies the template under its release name. Rename only
-        # that generated file so Debug never embeds a production service label.
-        if original != output and original.exists():
-            original.replace(output)
         output.write_bytes(plistlib.dumps(data))
 
 
