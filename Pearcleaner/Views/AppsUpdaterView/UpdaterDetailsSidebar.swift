@@ -71,11 +71,7 @@ struct UpdaterSourceCheckboxSection: View {
                     get: { sources.appStore.enabled },
                     set: { newValue in
                         sources.appStore.enabled = newValue
-                        if newValue {
-                            Task { await updateManager.scanIfNeeded(sources: [.appStore]) }
-                        } else {
-                            updateManager.updatesBySource[.appStore] = nil
-                        }
+                        Task { await updateManager.sourceSettingsDidChange(.appStore, enabled: newValue) }
                     }
                 )) {
                     HStack(spacing: 8) {
@@ -134,11 +130,7 @@ struct UpdaterSourceCheckboxSection: View {
                     get: { sources.homebrew.enabled },
                     set: { newValue in
                         sources.homebrew.enabled = newValue
-                        if newValue {
-                            Task { await updateManager.scanIfNeeded(sources: [.homebrew]) }
-                        } else {
-                            updateManager.updatesBySource[.homebrew] = nil
-                        }
+                        Task { await updateManager.sourceSettingsDidChange(.homebrew, enabled: newValue) }
                     }
                 )) {
                     HStack(spacing: 8) {
@@ -178,11 +170,7 @@ struct UpdaterSourceCheckboxSection: View {
                     get: { sources.sparkle.enabled },
                     set: { newValue in
                         sources.sparkle.enabled = newValue
-                        if newValue {
-                            Task { await updateManager.scanIfNeeded(sources: [.sparkle]) }
-                        } else {
-                            updateManager.updatesBySource[.sparkle] = nil
-                        }
+                        Task { await updateManager.sourceSettingsDidChange(.sparkle, enabled: newValue) }
                     }
                 )) {
                     HStack(spacing: 8) {
@@ -239,11 +227,7 @@ struct UpdaterSourceCheckboxSection: View {
                 get: { sources.electron.enabled },
                 set: { newValue in
                     sources.electron.enabled = newValue
-                    if newValue {
-                        Task { await updateManager.scanIfNeeded(sources: [.electron]) }
-                    } else {
-                        updateManager.updatesBySource[.electron] = nil
-                    }
+                    Task { await updateManager.sourceSettingsDidChange(.electron, enabled: newValue) }
                 }
             )) {
                 HStack(spacing: 8) {
@@ -259,6 +243,34 @@ struct UpdaterSourceCheckboxSection: View {
             }
             .toggleStyle(CircleCheckboxToggleStyle())
             .help("Check Electron update manifests without installing downloads automatically")
+
+            Toggle(isOn: Binding(
+                get: { sources.official.enabled },
+                set: { value in
+                    sources.official.enabled = value
+                    Task { await updateManager.sourceSettingsDidChange(.official, enabled: value) }
+                }
+            )) {
+                Label("Official Updates", systemImage: "globe")
+                    .font(.caption)
+                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+            }
+            .toggleStyle(CircleCheckboxToggleStyle())
+            .help("Check official vendor services and GitHub releases")
+
+            Toggle(isOn: Binding(
+                get: { sources.catalog.enabled },
+                set: { value in
+                    sources.catalog.enabled = value
+                    Task { await updateManager.sourceSettingsDidChange(.catalog, enabled: value) }
+                }
+            )) {
+                Label("Homebrew Catalog", systemImage: "books.vertical")
+                    .font(.caption)
+                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+            }
+            .toggleStyle(CircleCheckboxToggleStyle())
+            .help("Compare unmanaged apps with the public catalog without adopting or reinstalling them")
 
             // Current apps toggle
             Toggle(isOn: Binding(
@@ -500,6 +512,8 @@ struct UpdaterHiddenAppRow: View {
         case .homebrew: return "mug"
         case .sparkle: return "sparkles"
         case .electron: return "bolt.fill"
+        case .official: return "globe"
+        case .catalog: return "books.vertical"
         case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"
@@ -512,6 +526,8 @@ struct UpdaterHiddenAppRow: View {
         case .homebrew: return .orange
         case .sparkle: return .purple
         case .electron: return .yellow
+        case .official: return .blue
+        case .catalog: return .orange
         case .managed: return .blue
         case .unsupported: return .gray
         case .current: return .green
@@ -561,7 +577,7 @@ struct UpdaterHiddenAppRow: View {
                         .font(.caption2)
                         .foregroundStyle(sourceColor)
 
-                    Text(app.source.rawValue.capitalized)
+                    Text(app.source.title)
                         .font(.caption2)
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                 }

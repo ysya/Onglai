@@ -19,6 +19,9 @@ class UpdaterDebugLogger: ObservableObject {
     @Published private(set) var homebrewLogs: [String] = []
     @Published private(set) var electronLogs: [String] = []
 
+    @Published private(set) var officialLogs: [String] = []
+    @Published private(set) var catalogLogs: [String] = []
+
     private init() {}
 
     /// Check if debug logging is currently enabled (reads directly from UserDefaults)
@@ -43,6 +46,10 @@ class UpdaterDebugLogger: ObservableObject {
                 self?.homebrewLogs.append(logLine)
             case .electron:
                 self?.electronLogs.append(logLine)
+            case .official:
+                self?.officialLogs.append(logLine)
+            case .catalog:
+                self?.catalogLogs.append(logLine)
             case .managed, .unsupported:
                 // No logs for unsupported apps (they don't have updates to debug)
                 break
@@ -114,6 +121,11 @@ class UpdaterDebugLogger: ObservableObject {
         }
         report += "\n"
 
+        for (title, logs) in [("OFFICIAL UPDATE CHECKER", officialLogs), ("HOMEBREW CATALOG CHECKER", catalogLogs)] {
+            report += "\n\(title)\n"
+            report += logs.isEmpty ? "  (No logs recorded)\n" : logs.map { "  \($0)\n" }.joined()
+        }
+
         report += "=" + String(repeating: "=", count: 78) + "\n"
         report += "END OF DEBUG LOG\n"
         report += "=" + String(repeating: "=", count: 78) + "\n"
@@ -128,11 +140,13 @@ class UpdaterDebugLogger: ObservableObject {
             self?.sparkleLogs.removeAll()
             self?.homebrewLogs.removeAll()
             self?.electronLogs.removeAll()
+            self?.officialLogs.removeAll()
+            self?.catalogLogs.removeAll()
         }
     }
 
     /// Check if any logs exist
     var hasLogs: Bool {
-        !appStoreLogs.isEmpty || !sparkleLogs.isEmpty || !homebrewLogs.isEmpty || !electronLogs.isEmpty
+        !appStoreLogs.isEmpty || !sparkleLogs.isEmpty || !homebrewLogs.isEmpty || !electronLogs.isEmpty || !officialLogs.isEmpty || !catalogLogs.isEmpty
     }
 }

@@ -40,7 +40,7 @@ class SparkleUpdateChecker {
     static let invalidFeedConfigurationMessage = "This app does not expose a usable Sparkle feed"
 
     /// Check for Sparkle updates using SPUUpdater directly
-    /// Only checks apps with SUFeedURL in Info.plist (no binary scanning)
+    /// Uses explicit bundle metadata or verified publisher runtime feeds.
     static func checkForUpdates(apps: [AppInfo], includePreReleases: Bool) async -> UpdateCheckResults {
         logger.log(.sparkle, "Starting Sparkle update check for \(apps.count) apps (includePreReleases: \(includePreReleases))")
         await GlobalConsoleManager.shared.appendOutput("Checking for Sparkle updates (\(apps.count) apps)...\n", source: CurrentPage.updater.title)
@@ -157,17 +157,18 @@ class SparkleUpdateChecker {
     }
 
     /// Get Sparkle feed URL from app bundle
-    /// Checks SUFeedURL in Info.plist, falls back to DevMate if framework is present
+    /// Uses explicit metadata, verified publisher feeds, then legacy DevMate.
     static func feedURL(from bundle: Bundle) -> URL? {
         guard let information = bundle.infoDictionary else { return nil }
 
-        // 1. Check SUFeedURL in Info.plist (standard Sparkle configuration)
-        if let urlString = information["SUFeedURL"] as? String,
-           let feedURL = validatedFeedURL(from: urlString) {
+        if let feedURL = KnownSparkleFeeds.feedURL(
+            bundleIdentifier: bundle.bundleIdentifier ?? "",
+            information: information
+        ) {
             return feedURL
         }
 
-        // 2. DevMate framework fallback (older apps)
+        // DevMate framework fallback (older apps)
         guard let bundleIdentifier = bundle.bundleIdentifier else { return nil }
 
         let frameworksURL = bundle.bundleURL.appendingPathComponent("Contents/Frameworks")
@@ -187,42 +188,14 @@ class SparkleUpdateChecker {
     /// Some apps use placeholders such as `NULL` and replace them dynamically
     /// at runtime; Foundation otherwise accepts these as relative URLs.
     static func validatedFeedURL(from rawValue: String) -> URL? {
-        let value = rawValue
-            .unquoted
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !value.isEmpty,
-              !["null", "(null)", "nil"].contains(value.lowercased()),
-              let url = URL(string: value),
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              url.host?.isEmpty == false else {
-            return nil
-        }
-
-        return url
+        KnownSparkleFeeds.validatedFeedURL(from: rawValue)
     }
 
     /// Sparkle 2 expects SUPublicEDKey to contain a raw 32-byte Ed25519 public
     /// key encoded as one Base64 string. A PEM/DSA key in this field causes
     /// SPUUpdater.start() to fail with a low-level cryptographic error.
     static func hasInvalidEdDSAPublicKey(in bundle: Bundle) -> Bool {
-        guard let information = bundle.infoDictionary,
-              information.keys.contains("SUPublicEDKey") else {
-            return false
-        }
-
-        guard let rawKey = information["SUPublicEDKey"] as? String else {
-            return true
-        }
-
-        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.contains("-----BEGIN"),
-              let decodedKey = Data(base64Encoded: key) else {
-            return true
-        }
-
-        return decodedKey.count != 32
+        KnownSparkleFeeds.hasInvalidEdDSAPublicKey(in: bundle.infoDictionary ?? [:])
     }
 
     /// Sparkle reports signing setup problems through one error code, including
@@ -307,7 +280,7 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
         var isPreRelease = false
 
         // Method 1: Sparkle 2.0+ channels (modern apps)
-        if let channel = appcastItem.channel, channel.lowercased() != "release" {
+        if let channel = appcastItem.channel, KnownSparkleFeeds.isPrereleaseChannel(channel) {
             if !includePreReleases {
                 SparkleUpdateChecker.logger.log(.sparkle, "     Filtering: Pre-release channel '\(channel)' (toggle off)")
                 return nil
@@ -585,24 +558,7 @@ private class SparkleCheckerOperation: NSObject, SPUUserDriver, SPUUpdaterDelega
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        // If pre-releases are enabled, allow common pre-release channels
-        // If disabled, return empty set (only default/stable channel)
-        guard includePreReleases else {
-            return []
-        }
-
-        // Common pre-release channel names used by Sparkle apps
-        return ["beta", "alpha", "nightly", "rc", "dev"]
+        KnownSparkleFeeds.allowedChannels(includePreReleases: includePreReleases)
     }
 
-}
-
-// MARK: - String Extension
-
-private extension String {
-    /// Removes surrounding quotes and apostrophes from the string
-    /// Handles malformed Info.plist entries like: "https://example.com" or 'https://example.com'
-    var unquoted: String {
-        return trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-    }
 }

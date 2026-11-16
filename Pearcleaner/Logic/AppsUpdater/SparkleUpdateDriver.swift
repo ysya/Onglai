@@ -56,6 +56,15 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
         logger.log(.sparkle, "━━━ Starting Sparkle update for \(appBundle.bundleIdentifier ?? "unknown")")
         logger.log(.sparkle, "  App path: \(appBundle.bundlePath)")
 
+        guard !SparkleUpdateChecker.hasInvalidEdDSAPublicKey(in: appBundle) else {
+            completionCallback(false, NSError(
+                domain: SUSparkleErrorDomain,
+                code: Int(SUError.noPublicDSAFoundError.rawValue),
+                userInfo: [NSLocalizedDescriptionKey: SparkleUpdateChecker.invalidSigningConfigurationMessage]
+            ))
+            return
+        }
+
         Task { @MainActor in
             GlobalConsoleManager.shared.appendOutput("Initializing Sparkle updater for \(appBundle.bundleURL.lastPathComponent)...\n", source: CurrentPage.updater.title)
         }
@@ -274,20 +283,12 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
     // MARK: - SPUUpdaterDelegate Protocol
 
     func feedURLString(for updater: SPUUpdater) -> String? {
-        // Provide DevMate fallback for apps without SUFeedURL in Info.plist
-        // SPUUpdater automatically reads SUFeedURL from Info.plist first, then calls this delegate
+        // Reuse the checker's explicit, runtime, and legacy feed resolution.
         return SparkleUpdateChecker.feedURL(from: updater.hostBundle)?.absoluteString
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        // If pre-releases are enabled, allow common pre-release channels
-        // If disabled, return empty set (only default/stable channel)
-        guard includePreReleases else {
-            return []
-        }
-
-        // Common pre-release channel names used by Sparkle apps
-        return ["beta", "alpha", "nightly", "rc", "dev"]
+        KnownSparkleFeeds.allowedChannels(includePreReleases: includePreReleases)
     }
 
     func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {

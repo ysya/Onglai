@@ -41,6 +41,19 @@ struct UpdaterSourcesSettings: AppStorageCodable {
     var sparkle: SparkleSettings = SparkleSettings()
     var appStore: AppStoreSettings = AppStoreSettings()
     var electron: ElectronSettings = ElectronSettings()
+    var official = AdditionalSourceSettings()
+    var catalog = AdditionalSourceSettings()
+
+    var enabledSources: Set<UpdateSource> {
+        var enabled: Set<UpdateSource> = []
+        if homebrew.enabled { enabled.insert(.homebrew) }
+        if sparkle.enabled { enabled.insert(.sparkle) }
+        if appStore.enabled { enabled.insert(.appStore) }
+        if electron.enabled { enabled.insert(.electron) }
+        if official.enabled { enabled.insert(.official) }
+        if catalog.enabled { enabled.insert(.catalog) }
+        return enabled
+    }
 
     init() {}
 
@@ -50,6 +63,8 @@ struct UpdaterSourcesSettings: AppStorageCodable {
         sparkle = try container.decodeIfPresent(SparkleSettings.self, forKey: .sparkle) ?? SparkleSettings()
         appStore = try container.decodeIfPresent(AppStoreSettings.self, forKey: .appStore) ?? AppStoreSettings()
         electron = try container.decodeIfPresent(ElectronSettings.self, forKey: .electron) ?? ElectronSettings()
+        official = try container.decodeIfPresent(AdditionalSourceSettings.self, forKey: .official) ?? AdditionalSourceSettings()
+        catalog = try container.decodeIfPresent(AdditionalSourceSettings.self, forKey: .catalog) ?? AdditionalSourceSettings()
     }
 
     struct HomebrewSettings: Codable {
@@ -67,6 +82,10 @@ struct UpdaterSourcesSettings: AppStorageCodable {
     }
 
     struct ElectronSettings: Codable {
+        var enabled: Bool = true
+    }
+
+    struct AdditionalSourceSettings: Codable {
         var enabled: Bool = true
     }
 }

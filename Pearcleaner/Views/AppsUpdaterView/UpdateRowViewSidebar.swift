@@ -132,7 +132,7 @@ struct UpdateRowViewSidebar: View {
             } else if let availableVersion = app.availableVersion {
                 versionText(installed: app.appInfo.appVersion, available: availableVersion, source: app.source)
             } else {
-                Text(verbatim: app.source.rawValue)
+                Text(app.source.title)
                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
             }
         }
@@ -146,7 +146,7 @@ struct UpdateRowViewSidebar: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(sourceColor(source))
                 .frame(width: 18, height: 18)
-                .help(source.rawValue)
+                .help(source.title)
         }
     }
 
@@ -164,6 +164,8 @@ struct UpdateRowViewSidebar: View {
         case .appStore: return "macwindow"
         case .sparkle: return "sparkles"
         case .electron: return "bolt.fill"
+        case .official: return "globe"
+        case .catalog: return "books.vertical"
         case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"
@@ -176,6 +178,8 @@ struct UpdateRowViewSidebar: View {
         case .appStore: return .purple
         case .sparkle: return .orange
         case .electron: return .yellow
+        case .official: return .blue
+        case .catalog: return .orange
         case .managed: return .blue
         case .unsupported, .current: return .gray
         }

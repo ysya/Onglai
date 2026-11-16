@@ -19,6 +19,7 @@ Onglai is a maintained continuation of [Pearcleaner](https://github.com/alienato
 - **Bug fixes with root causes found here**: app exiting immediately when launched via `open`/Raycast/Alfred (upstream #589), UI-wide jank caused by release-notes HTML parsing inside the SwiftUI view body, and the toolbar notice badge drifting out of the title bar on macOS 26
 - **Deletion safety net**: user-content folders (`~/Documents`, `~/Desktop`, `~/Downloads`, `~/Public`, …) and scan roots can never be offered for deletion, no matter how fuzzy the name match — defense in depth against the "uninstalled an app, lost my documents" class of bugs
 - **Adopted community fixes** that were pending upstream: macOS 26 scan performance, Homebrew `--no-quarantine` removal on brew ≥ 4.7, cask/tap handling, analytics via the formulae.brew.sh API, Sentinel deep-link hardening, and more
+- **Broader update checks**: Homebrew and Sparkle updates, official vendor services, public Electron update providers, and Homebrew catalogue matching for unmanaged apps. External updates open their update page for installation.
 - **Fresh identity**: bundle ID `me.ysya.Onglai`, `onglai://` deep links, and the CLI is now `ong`
 
 ## Install
@@ -52,6 +53,8 @@ Both modes verify the app and helper signing team before publishing through a dr
 Onglai（旺來）是 [Pearcleaner](https://github.com/alienator88/Pearcleaner) 的延續維護版：完整移除 app 與殘留檔、清理孤兒檔案、瘦身通用二進位、管理 Homebrew。原專案 2026 年初進入維護模式，絕大多數程式碼出自原作者 Alin Lupascu 之手。
 
 在原版之上，Onglai 修掉了幾個查到根因的老 bug（`open`/Raycast 啟動即退出、release notes HTML 解析造成的全域卡頓、工具列圖示跑版），並加上**誤刪防護網**——使用者內容資料夾（文件、桌面、下載等）無論名稱怎麼匹配都不會出現在刪除清單裡。
+
+Updater 支援 Homebrew、Sparkle、官方更新服務與公開的 Electron 更新來源，也能以 Homebrew 目錄比對非 Homebrew 安裝的 App。外部更新會開啟更新頁面，供你完成安裝。
 
 安裝：從 [Releases](https://github.com/ysya/Onglai/releases) 下載解壓，拖進「應用程式」。目前免費發佈版使用維護者的 Apple Development 憑證簽章，但無法送 Apple 公證；首次開啟需要到 **系統設定 → 隱私權與安全性 → 強制打開**。安裝後請依提示授權**完全磁碟取用**。
 

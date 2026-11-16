@@ -76,7 +76,7 @@ struct AppsUpdaterView: View {
     private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
         var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
             (String(localized: "Update Available"), { $0.section == .available }, true, updateManager.scanningSources.contains(.homebrew) || updateManager.scanningSources.contains(.sparkle)),
-            (String(localized: "External Update"), { $0.section == .external }, true, updateManager.scanningSources.contains(.appStore) || updateManager.scanningSources.contains(.electron)),
+            (String(localized: "External Update"), { $0.section == .external }, true, [UpdateSource.appStore, .electron, .official, .catalog].contains { updateManager.scanningSources.contains($0) }),
             (String(localized: "Error"), { $0.section == .attention }, true, false)
         ]
         if display.showCurrent {
@@ -485,7 +485,7 @@ private struct UpdateFailureDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(item.issues.enumerated()), id: \.offset) { _, issue in
                         VStack(alignment: .leading, spacing: 5) {
-                            Label(issue.source.rawValue, systemImage: sourceSymbol(issue.source))
+                            Label(issue.source.title, systemImage: sourceSymbol(issue.source))
                                 .font(.headline)
                             Text(verbatim: issue.message)
                                 .font(.callout)
@@ -516,6 +516,8 @@ private struct UpdateFailureDetailView: View {
         case .appStore: return "macwindow"
         case .sparkle: return "sparkles"
         case .electron: return "bolt.fill"
+        case .official: return "globe"
+        case .catalog: return "books.vertical"
         case .managed: return "arrow.up.forward.app"
         case .unsupported: return "questionmark.circle"
         case .current: return "checkmark.circle"

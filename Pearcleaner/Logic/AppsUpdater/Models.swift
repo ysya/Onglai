@@ -14,6 +14,8 @@ enum UpdateSource: String, CaseIterable {
     case appStore = "App Store"
     case sparkle = "Sparkle"
     case electron = "Electron"
+    case official = "Official Updates"
+    case catalog = "Homebrew Catalog"
     case managed = "Self-Updating"
     case unsupported = "Unsupported"
     case current = "Current"
@@ -28,6 +30,10 @@ enum UpdateSource: String, CaseIterable {
             return "✨"
         case .electron:
             return "⚡️"
+        case .official:
+            return "🌐"
+        case .catalog:
+            return "📚"
         case .managed:
             return "↗️"
         case .unsupported:
@@ -35,6 +41,12 @@ enum UpdateSource: String, CaseIterable {
         case .current:
             return "✓"
         }
+    }
+
+    var title: String { String(localized: String.LocalizationValue(rawValue)) }
+
+    var isExternalUpdate: Bool {
+        self == .electron || self == .official || self == .catalog
     }
 }
 

@@ -52,6 +52,10 @@ struct UpdateDetailView: View {
             return .orange
         case .electron:
             return .yellow
+        case .official:
+            return .blue
+        case .catalog:
+            return .orange
         case .managed:
             return .blue
         case .unsupported:
@@ -355,7 +359,7 @@ struct UpdateDetailView: View {
             HStack(spacing: 0) {
                 Spacer()
                 HStack(spacing: 4) {
-                    Text(app.source.rawValue)
+                    Text(app.source.title)
                         .font(.subheadline)
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                     if app.isIOSApp {
@@ -432,7 +436,7 @@ struct UpdateDetailView: View {
                 Task { await updateManager.updateApp(app) }
             }
         } label: {
-            Text(app.source == .electron ? "View Update" :
+            Text(app.source.isExternalUpdate ? "View Update" :
                  app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
         .buttonStyle(.plain)
@@ -532,11 +536,11 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.source == .electron ? "View Update" :
+                title: app.source.isExternalUpdate ? "View Update" :
                        app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
                 foregroundColor: .white,
                 backgroundColor: .green,
-                isDisabled: app.status != .idle || (app.source == .electron && app.externalURL == nil),
+                isDisabled: app.status != .idle || (app.source.isExternalUpdate && app.externalURL == nil),
                 action: {
                     if app.isIOSApp, let appStoreURL = app.appStoreURL {
                         openInAppStore(urlString: appStoreURL)

@@ -84,12 +84,13 @@ enum ElectronUpdateChecker {
         do {
             let metadata: ElectronReleaseMetadata
             switch configuration.provider {
-            case .generic, .s3, .spaces:
-                guard let manifestURL = configuration.manifestURL else {
+            case .generic, .s3, .spaces, .r2, .bitbucket, .keygen:
+                guard let manifestURL = configuration.manifestURL,
+                      let request = configuration.manifestRequest else {
                     throw ElectronCheckerError.invalidManifestURL
                 }
                 logger.log(.electron, "Checking \(app.appName): \(manifestURL.absoluteString)")
-                let manifest = try await fetchText(from: manifestURL)
+                let manifest = try await fetchText(request: request)
                 metadata = try ElectronUpdateMetadataParser.parseManifest(
                     manifest,
                     baseURL: manifestURL.deletingLastPathComponent()
@@ -102,17 +103,21 @@ enum ElectronUpdateChecker {
                     configuration: configuration
                 )
 
+            case .gitlab:
+                metadata = try await fetchGitLabRelease(configuration: configuration)
+
             case .unsupported(let name):
                 throw ElectronCheckerError.unsupportedProvider(name)
             }
 
-            let installed = Version(versionNumber: app.appVersion, buildNumber: nil)
-            let available = Version(versionNumber: metadata.version, buildNumber: nil)
-            guard !installed.isEmpty, !available.isEmpty else {
+            guard let comparison = UpdateVersionComparator.compare(installed: app.appVersion, available: metadata.version) else {
                 throw ElectronCheckerError.invalidVersion
             }
+            guard configuration.acceptsReleaseVersion(metadata.version) else {
+                throw ElectronCheckerError.channelMismatch
+            }
 
-            guard available > installed else {
+            guard comparison == .orderedAscending else {
                 logger.log(.electron, "Current: \(app.appName) \(app.appVersion)")
                 return .current(app.path)
             }
@@ -134,7 +139,7 @@ enum ElectronUpdateChecker {
                 releaseDescription: metadata.releaseNotes,
                 releaseNotesLink: metadata.releasePageURL?.absoluteString,
                 releaseDate: metadata.releaseDate,
-                isPreRelease: isPreReleaseVersion(metadata.version),
+                isPreRelease: UpdateVersionComparator.channel(for: metadata.version) != "stable",
                 isIOSApp: false,
                 foundInRegion: nil,
                 appcastItem: nil
@@ -173,33 +178,37 @@ enum ElectronUpdateChecker {
         )
     }
 
-    private static func fetchText(from url: URL, accept: String? = nil) async throws -> String {
-        guard url.scheme?.lowercased() == "https", url.host?.isEmpty == false else {
+    private static func fetchGitLabRelease(configuration: ElectronUpdateConfiguration) async throws -> ElectronReleaseMetadata {
+        guard let endpoint = configuration.releaseAPIURL else {
             throw ElectronCheckerError.invalidManifestURL
         }
+        let document = try await fetchText(from: endpoint, accept: "application/json")
+        let release = try ElectronUpdateMetadataParser.parseGitLabRelease(Data(document.utf8), configuration: configuration)
+        let manifest = try await fetchText(from: release.manifestURL)
+        let metadata = try ElectronUpdateMetadataParser.parseManifest(
+            manifest,
+            baseURL: release.manifestURL.deletingLastPathComponent(),
+            releasePageURL: release.releasePageURL
+        )
+        return ElectronReleaseMetadata(
+            version: metadata.version,
+            releaseDate: metadata.releaseDate ?? release.releaseDate,
+            releaseNotes: metadata.releaseNotes ?? release.releaseNotes,
+            downloadURL: metadata.downloadURL,
+            releasePageURL: metadata.releasePageURL
+        )
+    }
 
+    private static func fetchText(from url: URL, accept: String? = nil) async throws -> String {
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
         request.httpMethod = "GET"
         request.setValue(accept ?? "text/yaml, text/plain, application/octet-stream", forHTTPHeaderField: "Accept")
 
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let response = response as? HTTPURLResponse,
-              (200...299).contains(response.statusCode) else {
-            throw ElectronCheckerError.requestFailed
-        }
-        guard response.expectedContentLength <= Int64(maximumRemoteDocumentSize) else {
-            throw ElectronCheckerError.documentTooLarge
-        }
+        return try await fetchText(request: request)
+    }
 
-        var data = Data()
-        data.reserveCapacity(min(max(Int(response.expectedContentLength), 0), maximumRemoteDocumentSize))
-        for try await byte in bytes {
-            guard data.count < maximumRemoteDocumentSize else {
-                throw ElectronCheckerError.documentTooLarge
-            }
-            data.append(byte)
-        }
-
+    private static func fetchText(request: URLRequest) async throws -> String {
+        let (data, _) = try await UpdateHTTPClient.response(for: request, maximumBytes: maximumRemoteDocumentSize)
         guard let source = String(data: data, encoding: .utf8) else {
             throw ElectronCheckerError.invalidEncoding
         }
@@ -223,10 +232,9 @@ private enum ElectronSingleAppCheckResult: @unchecked Sendable {
 
 private enum ElectronCheckerError: LocalizedError {
     case invalidManifestURL
-    case requestFailed
-    case documentTooLarge
     case invalidEncoding
     case invalidVersion
+    case channelMismatch
     case unsupportedProvider(String)
     case missingGitHubManifest
 
@@ -234,14 +242,12 @@ private enum ElectronCheckerError: LocalizedError {
         switch self {
         case .invalidManifestURL:
             return String(localized: "The Electron update URL is invalid")
-        case .requestFailed:
-            return String(localized: "The Electron update service returned an error")
-        case .documentTooLarge:
-            return String(localized: "The Electron update document is too large")
         case .invalidEncoding:
             return String(localized: "The Electron update document is not valid UTF-8")
         case .invalidVersion:
             return String(localized: "The Electron update service returned an invalid version")
+        case .channelMismatch:
+            return String(localized: "The Electron release is outside the configured update channel")
         case .unsupportedProvider(let provider):
             return String(localized: "Electron provider \(provider) must be checked inside the app")
         case .missingGitHubManifest:
