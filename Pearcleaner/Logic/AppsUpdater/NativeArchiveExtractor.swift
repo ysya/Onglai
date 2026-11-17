@@ -10,11 +10,12 @@ enum NativeArchiveExtractor {
         switch format {
         case .zip:
             try inspectZIP(archive)
-            let profile = "(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read*)(allow file-write* (subpath \(sandboxLiteral(destination.path))))"
+            let profile = try extractionProfile(for: destination)
             // A fixed shell fragment sets a per-file kernel limit, then replaces itself with ditto.
             // No payload text is interpreted as shell syntax; paths are separate argv values.
             _ = try NativeSystemTool.run("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c",
-                "ulimit -f 2097152 || exit 1; exec /usr/bin/ditto -x -k --rsrc --qtn \"$1\" \"$2\"", "native-extract", archive.path, destination.path],
+                "ulimit -f \"$1\" || exit 1; shift; exec /usr/bin/ditto -x -k --rsrc --qtn \"$1\" \"$2\"", "native-extract",
+                String(NativeAppValidation.maximumFileBytes / 1024), archive.path, destination.path],
                 timeout: 300, monitor: { try checkExtractionBudget(destination) })
             let app = try selectApplication(in: destination)
             try NativeAppValidation.validateTree(app)
@@ -144,16 +145,35 @@ enum NativeArchiveExtractor {
         return app
     }
 
-    private static func checkExtractionBudget(_ root: URL) throws {
-        var size = try NativeAppValidation.extendedAttributeBytes(root)
+    static func extractionProfile(for destination: URL) throws -> String {
+        // Foundation may retain system aliases such as /var. Seatbelt checks the physical /private/var path.
+        guard destination.isFileURL, let physical = realpath(destination.path, nil) else {
+            throw NativeInstallError.invalidPayload("Cannot resolve the extraction directory.")
+        }
+        defer { free(physical) }
+        return "(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read*)(allow file-write* (subpath \(sandboxLiteral(String(cString: physical)))))"
+    }
+
+    static func checkExtractionBudget(_ root: URL,
+                                      metadataBytes: (URL) throws -> Int64 = NativeAppValidation.extendedAttributeBytes) throws {
+        var size = try metadataBytes(root)
         var entries = 0
         guard let iterator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.fileSizeKey, .isSymbolicLinkKey]) else { throw invalidZIP() }
         for case let file as URL in iterator {
             entries += 1
-            let values = try file.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey])
-            if values.isSymbolicLink != true { size += Int64(values.fileSize ?? 0) }
-            size += try NativeAppValidation.extendedAttributeBytes(file)
-            guard size <= NativeAppValidation.maximumExpandedBytes, entries <= NativeAppValidation.maximumEntries else { throw invalidZIP() }
+            guard entries <= NativeAppValidation.maximumEntries else { throw invalidZIP() }
+            do {
+                let values = try file.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey])
+                let attributes = try metadataBytes(file)
+                if values.isSymbolicLink != true { size += Int64(values.fileSize ?? 0) }
+                size += attributes
+            } catch {
+                // ditto atomically moves .BC.* temporary entries. Only a confirmed disappearance is transient.
+                var info = stat()
+                if lstat(file.path, &info) != 0, errno == ENOENT { continue }
+                throw error
+            }
+            guard size <= NativeAppValidation.maximumExpandedBytes else { throw invalidZIP() }
         }
     }
 

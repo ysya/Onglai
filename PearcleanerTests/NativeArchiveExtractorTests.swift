@@ -1,7 +1,74 @@
 import XCTest
+import Darwin
 @testable import Pearcleaner
 
 final class NativeArchiveExtractorTests: XCTestCase {
+    func testSandboxedExtractionThroughAnAliasedWorkspacePreservesQuarantine() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-alias-zip-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source/Fixture.app")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data("fixture".utf8).write(to: source.appendingPathComponent("payload"))
+        let archive = root.appendingPathComponent("payload.zip")
+        _ = try NativeSystemTool.run("/usr/bin/ditto", ["-c", "-k", "--keepParent", source.path, archive.path])
+        try NativeArtifactDownload.quarantine(archive)
+        let actual = root.appendingPathComponent("actual")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: actual, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: actual)
+        let app = try NativeArchiveExtractor.extract(archive, format: .zip, in: alias)
+        XCTAssertEqual(try Data(contentsOf: app.appendingPathComponent("payload")), Data("fixture".utf8))
+        XCTAssertGreaterThan(getxattr(app.path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW), 0)
+    }
+
+    func testLiveBudgetToleratesAnEntryThatDisappearsDuringMetadataInspection() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-live-budget-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let transient = root.appendingPathComponent(".BC.fixture")
+        try Data("temporary".utf8).write(to: transient)
+        var observed = false
+        XCTAssertNoThrow(try NativeArchiveExtractor.checkExtractionBudget(root, metadataBytes: { url in
+            if url.lastPathComponent == transient.lastPathComponent {
+                observed = true
+                try FileManager.default.removeItem(at: url)
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT))
+            }
+            return 0
+        }))
+        XCTAssertTrue(observed)
+        XCTAssertThrowsError(try NativeAppValidation.extendedAttributeBytes(transient))
+    }
+
+    func testLiveBudgetStillRejectsInvalidMetadataForAnExistingEntry() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-strict-budget-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("payload")
+        try Data("fixture".utf8).write(to: file)
+        XCTAssertThrowsError(try NativeArchiveExtractor.checkExtractionBudget(root, metadataBytes: { url in
+            if url.lastPathComponent == file.lastPathComponent {
+                throw NativeInstallError.invalidPayload("Fixture oversized metadata")
+            }
+            return 0
+        }))
+    }
+
+    func testExtractionSandboxStillRejectsWritesOutsideThePhysicalDestination() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-sandbox-boundary-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let actual = root.appendingPathComponent("actual")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: actual, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: actual)
+        let profile = try NativeArchiveExtractor.extractionProfile(for: alias)
+        let outside = root.appendingPathComponent("outside")
+        XCTAssertThrowsError(try NativeSystemTool.run("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", "printf fixture > \"$1\"", "sandbox-test", outside.path]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+    }
+
     func testRejectsTraversalAndAbsoluteArchivePaths() throws {
         for path in ["../escape", "/tmp/escape", "App.app/../../escape", "App.app\\..\\escape"] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
