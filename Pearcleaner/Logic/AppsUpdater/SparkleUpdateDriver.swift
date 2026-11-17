@@ -9,7 +9,7 @@
 import Foundation
 import Sparkle
 
-class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @unchecked Sendable {
+class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, SparkleUpdateSession, @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -19,6 +19,11 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
     private var updater: SPUUpdater?
     private let progressCallback: (Double, UpdateStatus) -> Void
     private let completionCallback: (Bool, Error?) -> Void
+
+    private var cancellationRequested = false
+    private var cancellationHandler: (() -> Void)?
+    private var pendingResult: (Bool, Error?)?
+    private var completed = false
 
     private var downloadedBytes: Int64 = 0
     private var totalBytes: Int64 = 0
@@ -57,7 +62,7 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
         logger.log(.sparkle, "  App path: \(appBundle.bundlePath)")
 
         guard !SparkleUpdateChecker.hasInvalidEdDSAPublicKey(in: appBundle) else {
-            completionCallback(false, NSError(
+            complete(false, NSError(
                 domain: SUSparkleErrorDomain,
                 code: Int(SUError.noPublicDSAFoundError.rawValue),
                 userInfo: [NSLocalizedDescriptionKey: SparkleUpdateChecker.invalidSigningConfigurationMessage]
@@ -93,8 +98,42 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
             Task { @MainActor in
                 GlobalConsoleManager.shared.appendOutput("✗ Failed to start Sparkle updater: \(error.localizedDescription)\n", source: CurrentPage.updater.title)
             }
-            completionCallback(false, error)
+            complete(false, error)
         }
+    }
+
+    /// Checking and downloading can abort through Sparkle's phase-specific closure.
+    /// Extraction and installation retain the queue slot until the real outcome.
+    func cancelUpdate() {
+        guard !completed else { return }
+        cancellationRequested = true
+        let cancel = cancellationHandler
+        cancellationHandler = nil
+        cancel?()
+    }
+
+    private func setCancellationHandler(_ cancellation: @escaping () -> Void) {
+        guard !completed else { return }
+        cancellationHandler = cancellation
+        if cancellationRequested { cancelUpdate() }
+    }
+
+    private func complete(_ success: Bool, _ error: Error?) {
+        guard !completed else { return }
+        completed = true
+        cancellationHandler = nil
+        completionCallback(success, error)
+    }
+
+    func updateCycleDidFinish(error: Error?) {
+        if let result = pendingResult { complete(result.0, result.1) }
+        else if cancellationRequested { complete(false, CancellationError()) }
+        else { complete(false, error ?? CancellationError()) }
+    }
+
+    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        updateCycleDidFinish(error: error)
     }
 
     // MARK: - SPUUserDriver Protocol (Auto-approve installation, track progress)
@@ -109,6 +148,11 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
     func showUpdateFound(with appcastItem: SUAppcastItem,
                         state: SPUUserUpdateState,
                         reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        cancellationHandler = nil
+        if cancellationRequested && state.stage != .installing {
+            reply(.dismiss)
+            return
+        }
         logger.log(.sparkle, "  ✓ Update found: \(appcastItem.displayVersionString) (build \(appcastItem.versionString))")
         if let fileURL = appcastItem.fileURL {
             logger.log(.sparkle, "  Download URL: \(fileURL.absoluteString)")
@@ -180,6 +224,7 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
                 GlobalConsoleManager.shared.appendOutput("Installing update (app will be terminated)...\n", source: CurrentPage.updater.title)
             }
         }
+        cancellationHandler = nil
         // Installing = 95-100%
         progressCallback(0.95, .installing)
     }
@@ -199,7 +244,7 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
         }
 
         progressCallback(1.0, .completed)
-        completionCallback(true, nil)
+        pendingResult = (true, nil)
         acknowledgement()
     }
 
@@ -218,18 +263,18 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
             GlobalConsoleManager.shared.appendOutput("✗ Sparkle updater error: \(error.localizedDescription)\n", source: CurrentPage.updater.title)
         }
 
-        completionCallback(false, error)
+        pendingResult = (false, error)
         acknowledgement()
     }
 
     // MARK: - SPUUserDriver Protocol (Stubbed UI methods)
 
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-        // No UI - stub
+        setCancellationHandler(cancellation)
     }
 
     func dismissUserInitiatedUpdateCheck() {
-        // No UI - stub
+        cancellationHandler = nil
     }
 
     func showUpdateNotFoundWithError(_ error: Error,
@@ -256,15 +301,17 @@ class SparkleUpdateDriver: NSObject, SPUUserDriver, SPUUpdaterDelegate, @uncheck
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
-        // No UI - stub
+        setCancellationHandler(cancellation)
     }
 
     func showDownloadDidStartExtractingUpdate() {
-        // No UI - stub
+        cancellationHandler = nil
     }
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        // Auto-approve installation
+        cancellationHandler = nil
+        // Once extraction has started there is no download cancellation closure.
+        // Preserve installation ownership until Sparkle reports its real outcome.
         reply(.install)
     }
 

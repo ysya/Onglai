@@ -68,6 +68,13 @@ class UpdateManager: ObservableObject {
     private var showUnsupported: Bool { display.showUnsupported }
     private var showCurrent: Bool { display.showCurrent }
 
+    typealias NativeUpdate = @Sendable (NativeInstallTarget, NativeUpdateArtifact,
+                                         @escaping @Sendable (NativeInstallProgress) -> Void) async throws -> NativeInstallResult
+    private let nativeUpdate: NativeUpdate
+    private let refreshUpdatedApp: (@MainActor (AppInfo) async -> Void)?
+    private var activeUpdatePaths: Set<URL> = []
+    private var activeUpdateBundles: Set<String> = []
+
     private let defaults: UserDefaults
     private let openURL: (URL) -> Bool
     private var hasAutoScannedOnce = false
@@ -111,9 +118,15 @@ class UpdateManager: ObservableObject {
     }
 
     init(defaults: UserDefaults = .standard, observesAppLoading: Bool = true,
-         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
+         nativeUpdate: NativeUpdate? = nil,
+         refreshUpdatedApp: (@MainActor (AppInfo) async -> Void)? = nil) {
         self.defaults = defaults
         self.openURL = openURL
+        self.nativeUpdate = nativeUpdate ?? { target, artifact, progress in
+            try await NativeUpdateCoordinator().install(target: target, artifact: artifact, progress: progress)
+        }
+        self.refreshUpdatedApp = refreshUpdatedApp
         _sourcesData = AppStorage(wrappedValue: UpdaterSourcesSettings.defaultEncoded(), "settings.updater.sources", store: defaults)
         _displayData = AppStorage(wrappedValue: UpdaterDisplaySettings.defaultEncoded(), "settings.updater.display", store: defaults)
         _debugLogging = AppStorage(wrappedValue: false, "settings.updater.debugLogging", store: defaults)
@@ -310,19 +323,19 @@ class UpdateManager: ObservableObject {
         if app.appInfo.isAppStore, app.source == .appStore { return 0 }
         if app.appInfo.cask != nil, app.source == .homebrew { return 1 }
         if app.source == .sparkle { return 2 }
-        if app.source == .official { return 3 }
-        if app.source == .electron { return 4 }
-        if app.source == .catalog { return 6 }
+        if app.source == .official { return app.canInstallNatively ? 3 : 13 }
+        if app.source == .electron { return app.canInstallNatively ? 4 : 14 }
+        if app.source == .catalog { return app.canInstallNatively ? 6 : 16 }
         if app.source == .homebrew { return 5 }
         if app.source == .appStore { return 7 }
         return 8
     }
 
     func setSelection(forAppAt path: URL, selected: Bool) {
-        for source in [UpdateSource.homebrew, .sparkle] {
+        for source in UpdateSource.allCases {
             guard var apps = updatesBySource[source] else { continue }
             var changed = false
-            for index in apps.indices where apps[index].appInfo.path.standardizedFileURL == path.standardizedFileURL {
+            for index in apps.indices where apps[index].canUpdate && apps[index].appInfo.path.standardizedFileURL == path.standardizedFileURL {
                 apps[index].isSelectedForUpdate = selected
                 changed = true
             }
@@ -1045,7 +1058,32 @@ class UpdateManager: ObservableObject {
         updatesBySource[source] = apps
     }
 
+    func canStartUpdate(_ app: UpdateableApp) -> Bool {
+        if app.status == .idle { return true }
+        if app.source.isExternalUpdate, case .failed = app.status { return true }
+        return false
+    }
+
     func updateApp(_ app: UpdateableApp) async {
+        guard !Task.isCancelled else { return }
+        let path = app.appInfo.path.standardizedFileURL
+        let bundle = app.appInfo.bundleIdentifier
+        if app.canUpdate {
+            guard !activeUpdatePaths.contains(path), !activeUpdateBundles.contains(bundle),
+                  !UpdateQueue.shared.containsOperation(for: bundle, appURL: path) else { return }
+            activeUpdatePaths.insert(path)
+            activeUpdateBundles.insert(bundle)
+        }
+        defer {
+            if app.canUpdate {
+                activeUpdatePaths.remove(path)
+                activeUpdateBundles.remove(bundle)
+            }
+        }
+        if app.canInstallNatively {
+            await updateNatively(app)
+            return
+        }
         switch app.source {
         case .homebrew:
             if let cask = app.appInfo.cask {
@@ -1116,17 +1154,11 @@ class UpdateManager: ObservableObject {
 
             // Wait for the queued operation to finish so batch updates and their
             // progress do not report completion while Sparkle is still running.
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                let operation = SparkleUpdateOperation(
-                    app: app,
-                    includePreReleases: self.includeSparklePreReleases,
-                    progressCallback: { [weak self] progress, status in
-                        guard let self = self else { return }
-                        Task { @MainActor in
-                            self.updateStatus(for: app, status: status, progress: progress)
-                        }
-                    },
-                    completionCallback: { [weak self] success, error in
+            await withTaskCancellationHandler(operation: {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let gate = UpdateCompletionGate()
+                    let complete: (Bool, Error?) -> Void = { [weak self] success, error in
+                        guard gate.claim() else { return }
                         Task { @MainActor in
                             guard let self = self else {
                                 continuation.resume()
@@ -1137,6 +1169,8 @@ class UpdateManager: ObservableObject {
                                 GlobalConsoleManager.shared.appendOutput("✓ Successfully updated \(app.appInfo.appName) via Sparkle\n", source: CurrentPage.updater.title)
                                 await self.removeFromUpdatesList(appID: app.id, source: .sparkle)
                                 await self.refreshApps(updatedApp: app.appInfo)
+                            } else if error is CancellationError {
+                                self.updateStatus(for: app, status: .idle, progress: 0)
                             } else {
                                 let message = error?.localizedDescription ?? "Unknown error"
                                 UpdaterDebugLogger.shared.log(.sparkle, "═══ Update failed for \(app.appInfo.appName): \(message)")
@@ -1146,9 +1180,24 @@ class UpdateManager: ObservableObject {
                             continuation.resume()
                         }
                     }
-                )
-                UpdateQueue.shared.addOperation(operation)
-            }
+                    let operation = SparkleUpdateOperation(
+                        app: app,
+                        includePreReleases: self.includeSparklePreReleases,
+                        progressCallback: { [weak self] progress, status in
+                            guard let self = self else { return }
+                            Task { @MainActor in
+                                guard !gate.isCompleted else { return }
+                                self.updateStatus(for: app, status: status, progress: progress)
+                            }
+                        },
+                        completionCallback: complete
+                    )
+                    UpdateQueue.shared.addOperation(operation, completionWhenCancelled: { complete(false, CancellationError()) })
+                    if Task.isCancelled { operation.cancel() }
+                }
+            }, onCancel: {
+                UpdateQueue.shared.cancelOperation(for: bundle, appURL: path)
+            })
 
         case .electron, .official, .catalog, .managed:
             guard openURL(app.appInfo.path) else {
@@ -1171,6 +1220,73 @@ class UpdateManager: ObservableObject {
             // Current apps are already up-to-date - do nothing
             UpdaterDebugLogger.shared.log(.sparkle, "ℹ️ App is already current: \(app.appInfo.appName)")
             break
+        }
+    }
+
+    private func updateNatively(_ app: UpdateableApp) async {
+        guard let artifact = app.nativeArtifact else { return }
+        let target = NativeInstallTarget(url: app.appInfo.path, bundleIdentifier: app.appInfo.bundleIdentifier,
+                                         version: app.appInfo.appVersion, build: app.appInfo.appBuildNumber)
+        let updater = nativeUpdate
+        let completionGate = UpdateCompletionGate()
+        updateStatus(for: app, status: .downloading, progress: 0)
+        do {
+            let result = try await withTaskCancellationHandler(operation: {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NativeInstallResult, Error>) in
+                    let operation = NativeAppUpdateOperation(bundleIdentifier: target.bundleIdentifier, appURL: target.url, work: { [updater, weak self] in
+                        try await updater(target, artifact) { [weak self] progress in
+                            Task { @MainActor in
+                                guard !completionGate.isCompleted else { return }
+                                let status: UpdateStatus
+                                switch progress.phase {
+                                case .downloading: status = .downloading
+                                case .extracting: status = .extracting
+                                case .verifying: status = .verifying
+                                case .installing: status = .installing
+                                }
+                                self?.updateStatus(for: app, status: status, progress: min(1, max(0, progress.fraction)))
+                            }
+                        }
+                    }, completion: {
+                        guard completionGate.claim() else { return }
+                        continuation.resume(with: $0)
+                    })
+                    UpdateQueue.shared.addOperation(operation)
+                    if Task.isCancelled { operation.cancel() }
+                }
+            }, onCancel: {
+                UpdateQueue.shared.cancelOperation(for: target.bundleIdentifier, appURL: target.url)
+            })
+            if let recoveryURL = result.recoveryURL {
+                GlobalConsoleManager.shared.appendOutput("Previous app retained at \(recoveryURL.path)\n", source: CurrentPage.updater.title)
+            }
+            await refreshApps(updatedApp: app.appInfo)
+        } catch is CancellationError {
+            updateStatus(for: app, status: .idle, progress: 0)
+        } catch NativeInstallError.cancelled {
+            updateStatus(for: app, status: .idle, progress: 0)
+        } catch NativeInstallError.authorizationRequired {
+            let message = String(localized: "This app cannot be replaced with your current permissions. Open App to use its updater or download the update from the publisher.")
+            fallBackToVendorActions(for: app, message: message)
+        } catch NativeInstallError.invalidPayload(let reason) {
+            let action = String(localized: "Open App to use its updater or download the update from the publisher.")
+            fallBackToVendorActions(for: app, message: "\(reason)\n\(action)")
+        } catch {
+            updateStatus(for: app, status: .failed(error.localizedDescription), progress: 0)
+            GlobalConsoleManager.shared.appendOutput("✗ Failed to update \(app.appInfo.appName): \(error.localizedDescription)\n", source: CurrentPage.updater.title)
+        }
+    }
+
+    private func fallBackToVendorActions(for app: UpdateableApp, message: String) {
+        for source in UpdateSource.allCases where source.isExternalUpdate {
+            guard var apps = updatesBySource[source] else { continue }
+            for index in apps.indices where apps[index].appInfo.path.standardizedFileURL == app.appInfo.path.standardizedFileURL {
+                apps[index].nativeArtifact = nil
+                apps[index].status = .failed(message)
+                apps[index].progress = 0
+                apps[index].isSelectedForUpdate = false
+            }
+            updatesBySource[source] = apps
         }
     }
 
@@ -1200,7 +1316,7 @@ class UpdateManager: ObservableObject {
         guard let apps = updatesBySource[source] else { return }
 
         // Only update apps that are selected for update
-        let selectedApps = apps.filter { $0.isSelectedForUpdate }
+        let selectedApps = apps.filter { $0.isSelectedForUpdate && $0.canUpdate }
 
         GlobalConsoleManager.shared.appendOutput("Starting batch update for \(selectedApps.count) app(s) from \(source.rawValue)...\n", source: CurrentPage.updater.title)
 
@@ -1246,7 +1362,7 @@ class UpdateManager: ObservableObject {
 
         await withTaskGroup(of: Void.self) { group in
             // Process each source's updates concurrently in separate Tasks
-            for source in [UpdateSource.homebrew, .sparkle] {
+            for source in [UpdateSource.homebrew, .sparkle, .official, .electron, .catalog] {
                 let sourceApps = selectedApps.filter { $0.source == source }
                 if !sourceApps.isEmpty {
                     group.addTask {
@@ -1313,7 +1429,13 @@ class UpdateManager: ObservableObject {
     /// Refresh all apps after an update
     /// - Parameter updatedApp: Optional specific app that was updated (only flushes that bundle for performance)
     private func refreshApps(updatedApp: AppInfo? = nil) async {
-        if let updatedApp { invalidateResults(forAppAt: updatedApp.path) }
+        if let updatedApp {
+            invalidateResults(forAppAt: updatedApp.path)
+            if let refreshUpdatedApp {
+                await refreshUpdatedApp(updatedApp)
+                return
+            }
+        }
         let folderPaths = await MainActor.run {
             FolderSettingsManager.shared.folderPaths
         }

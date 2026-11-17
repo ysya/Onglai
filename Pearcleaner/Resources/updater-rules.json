@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 1,
+  "revision": 2,
   "sparkleFeeds": [
     {
       "bundleIdentifier": "com.openai.codex",
@@ -37,6 +37,9 @@
       "endpointTemplate": "https://update.code.visualstudio.com/api/update/{darwinPlatform}/stable/latest",
       "page": "https://code.visualstudio.com/download",
       "versionKey": "productVersion",
+      "nativeDownloadURLKey": "url",
+      "nativeSHA256Key": "sha256hash",
+      "nativeFormat": "zip",
       "channelPolicy": "vscodeStable",
       "allowsNoUpdate204": true
     },

@@ -14,11 +14,22 @@ struct CatalogCask: Sendable {
     let minimumMacOSVersion: String?
     let architectures: [String]?
     let macOSVersions: [String]?
+    let archiveURL: URL?
+    let archiveSHA256: String?
+    let isDirectAppRecipe: Bool
+
+    func nativeArtifact(version: String, build: String?) -> NativeUpdateArtifact? {
+        guard isDirectAppRecipe, let archiveURL, let archiveSHA256 else { return nil }
+        let digest: NativeUpdateArtifact.Digest? = archiveSHA256 == "no_check" ? nil
+            : .init(algorithm: .sha256, value: archiveSHA256)
+        return NativeUpdateArtifact(url: archiveURL, version: version, build: build, digest: digest)
+    }
 
     init(token: String, names: [String], version: String?, homepage: String? = nil, bundleVersion: String? = nil,
          bundleShortVersion: String? = nil, appNames: [String] = [], bundleIdentifiers: Set<String> = [],
          isDeprecated: Bool = false, isDisabled: Bool = false,
-         minimumMacOSVersion: String? = nil, architectures: [String]? = nil, macOSVersions: [String]? = nil) {
+         minimumMacOSVersion: String? = nil, architectures: [String]? = nil, macOSVersions: [String]? = nil,
+         archiveURL: URL? = nil, archiveSHA256: String? = nil, isDirectAppRecipe: Bool = false) {
         self.token = token
         self.names = names
         self.version = version
@@ -32,6 +43,9 @@ struct CatalogCask: Sendable {
         self.minimumMacOSVersion = minimumMacOSVersion
         self.architectures = architectures
         self.macOSVersions = macOSVersions
+        self.archiveURL = archiveURL
+        self.archiveSHA256 = archiveSHA256
+        self.isDirectAppRecipe = isDirectAppRecipe
     }
 }
 
@@ -144,6 +158,7 @@ enum CatalogUpdateChecker {
                     appInfo: app, availableVersion: projection.displayVersion ?? remote, availableBuildNumber: verifiedBuild,
                     source: .catalog, adamID: nil, appStoreURL: nil,
                     externalURL: cask.homepage,
+                    nativeArtifact: cask.nativeArtifact(version: projection.displayVersion ?? remote, build: verifiedBuild),
                     isSelectedForUpdate: false, releaseTitle: nil, releaseDescription: nil,
                     releaseNotesLink: nil, releaseDate: nil,
                     isPreRelease: UpdateVersionComparator.channel(for: remote) != "stable",
@@ -255,7 +270,11 @@ enum CatalogUpdateChecker {
                 appNames: artifacts.flatMap(appNames),
                 bundleIdentifiers: bundleIDs, isDeprecated: object["deprecated"] as? Bool ?? false,
                 isDisabled: object["disabled"] as? Bool ?? false, minimumMacOSVersion: minimum, architectures: arches,
-                macOSVersions: macOS?["=="].map(strings)
+                macOSVersions: macOS?["=="].map(strings),
+                archiveURL: (object["url"] as? String).flatMap(URL.init(string:)),
+                archiveSHA256: object["sha256"] as? String,
+                isDirectAppRecipe: isSingleDirectAppRecipe(artifacts) && (object["container"] == nil || object["container"] is NSNull) &&
+                    (object["url_specs"] as? [String: Any] ?? [:]).isEmpty
             )
         }
     }
@@ -273,6 +292,17 @@ enum CatalogUpdateChecker {
         if let versions = cask.macOSVersions, !versions.contains(where: { osVersion == $0 || osVersion.hasPrefix($0 + ".") }) {
             return false
         }
+        return true
+    }
+
+    private static func isSingleDirectAppRecipe(_ artifacts: [[String: Any]]) -> Bool {
+        let appArtifacts = artifacts.filter { $0["app"] != nil }
+        guard appArtifacts.count == 1,
+              let app = appArtifacts.first?["app"] as? [Any],
+              app.count == 1, let source = app.first as? String,
+              !source.hasPrefix("/"), !source.split(separator: "/").contains(".."),
+              source.lowercased().hasSuffix(".app"),
+              artifacts.allSatisfy({ Set($0.keys).isSubset(of: ["app", "target", "uninstall", "zap"]) }) else { return false }
         return true
     }
 

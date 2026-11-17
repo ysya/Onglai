@@ -108,6 +108,7 @@ struct ElectronReleaseMetadata: Equatable {
     let releaseNotes: String?
     let downloadURL: URL?
     let releasePageURL: URL?
+    var nativeArtifact: NativeUpdateArtifact? = nil
 }
 
 struct ElectronGitLabReleaseMetadata {
@@ -310,8 +311,12 @@ enum ElectronUpdateMetadataParser {
             throw ElectronUpdateMetadataError.unsupportedVersion
         }
 
-        let filePath = preferredFileURL(in: source) ?? values["path"]
-        let downloadURL = filePath.flatMap { resolvedHTTPSURL($0, relativeTo: baseURL) }
+        let selected = preferredFile(in: source, fallbackValues: values)
+        let downloadURL = selected.flatMap { resolvedHTTPSURL($0.url, relativeTo: baseURL) }
+        let artifact = downloadURL.flatMap { url -> NativeUpdateArtifact? in
+            let digest = selected?.sha512.map { NativeUpdateArtifact.Digest(algorithm: .sha512, value: $0) }
+            return NativeUpdateArtifact(url: url, version: version, digest: digest)
+        }
         let releaseNotes = yamlBlockValue(for: "releaseNotes", in: source)
             ?? nonEmpty(values["releaseNotes"])
 
@@ -320,7 +325,8 @@ enum ElectronUpdateMetadataParser {
             releaseDate: nonEmpty(values["releaseDate"]),
             releaseNotes: releaseNotes,
             downloadURL: downloadURL,
-            releasePageURL: releasePageURL
+            releasePageURL: releasePageURL,
+            nativeArtifact: artifact
         )
     }
 
@@ -347,63 +353,144 @@ enum ElectronUpdateMetadataParser {
         return result
     }
 
-    private static func preferredFileURL(in source: String) -> String? {
-        var insideFiles = false
-        var candidates: [String] = []
+    private struct ManifestFile {
+        let url: String
+        let sha512: String?
+    }
 
+    /// Select an exact file record, retaining its own hash. Never borrow the
+    /// legacy top-level hash for a different file from the files array.
+    private static func preferredFile(in source: String, fallbackValues: [String: String]) -> ManifestFile? {
+        var insideFiles = false
+        var sawFiles = false
+        var records: [[String: String]] = []
+        var current: [String: String]?
+        var digestBlockIndentation: Int?
+        var malformed = false
         for rawLine in source.split(whereSeparator: \.isNewline) {
             let line = String(rawLine)
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
             let indentation = line.prefix(while: \.isWhitespace).count
-
+            if let digestIndentation = digestBlockIndentation {
+                if indentation > digestIndentation {
+                    // SHA512 block scalars may wrap base64 across lines. Only
+                    // base64 characters can continue this exact record's hash.
+                    guard trimmed.unicodeScalars.allSatisfy({
+                        CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=").contains($0)
+                    }) else { malformed = true; continue }
+                    current?["sha512", default: ""] += trimmed
+                    continue
+                }
+                digestBlockIndentation = nil
+            }
             if indentation == 0 {
+                if insideFiles, let current { records.append(current) }
+                current = nil
                 insideFiles = trimmed == "files:"
+                if insideFiles {
+                    if sawFiles { malformed = true }
+                    sawFiles = true
+                }
                 continue
             }
-
             guard insideFiles else { continue }
-            let candidate = trimmed.hasPrefix("- ") ? String(trimmed.dropFirst(2)) : trimmed
-            guard candidate.hasPrefix("url:"),
-                  let separator = candidate.firstIndex(of: ":") else { continue }
-
-            let value = candidate[candidate.index(after: separator)...]
-                .trimmingCharacters(in: .whitespaces)
-            if let value = nonEmpty(unquoted(value)) {
-                candidates.append(value)
+            let startsRecord = trimmed.hasPrefix("- ")
+            if startsRecord {
+                if let current { records.append(current) }
+                current = [:]
+            }
+            let field = startsRecord ? String(trimmed.dropFirst(2)) : trimmed
+            guard let separator = field.firstIndex(of: ":"), current != nil else {
+                malformed = true
+                continue
+            }
+            let key = String(field[..<separator]).trimmingCharacters(in: .whitespaces)
+            let value = unquoted(String(field[field.index(after: separator)...]).trimmingCharacters(in: .whitespaces))
+            guard current?[key] == nil else { malformed = true; continue }
+            if key == "sha512", [">", ">-", ">+", "|", "|-", "|+"].contains(value) {
+                current?[key] = ""
+                digestBlockIndentation = indentation
+            } else {
+                current?[key] = value
             }
         }
-
-        guard !candidates.isEmpty else { return nil }
-
-        #if arch(arm64)
-        let native = candidates.filter {
-            let value = $0.lowercased()
-            return value.contains("arm64") || value.contains("aarch64")
-        }
-        #else
-        let native = candidates.filter {
-            let value = $0.lowercased()
-            return value.contains("x64") || value.contains("x86_64") ||
-                   (!value.contains("arm64") && !value.contains("aarch64"))
-        }
-        #endif
-
-        let neutral = candidates.filter {
-            let value = $0.lowercased()
-            return !value.contains("arm64") && !value.contains("aarch64") &&
-                   !value.contains("x64") && !value.contains("x86_64")
-        }
-
-        for group in [native, neutral, candidates] {
-            if let diskImage = group.first(where: { $0.lowercased().hasSuffix(".dmg") }) {
-                return diskImage
+        if insideFiles, let current { records.append(current) }
+        guard !malformed else { return nil }
+        let files: [ManifestFile]
+        if sawFiles {
+            guard !records.isEmpty, records.allSatisfy({ nonEmpty($0["url"]) != nil }) else { return nil }
+            files = records.compactMap { record in
+                guard let url = nonEmpty(record["url"]) else { return nil }
+                return ManifestFile(url: url, sha512: record["sha512"])
             }
-            if let archive = group.first(where: { $0.lowercased().hasSuffix(".zip") }) {
-                return archive
-            }
-        }
+        } else if let url = nonEmpty(fallbackValues["path"]) {
+            files = [ManifestFile(url: url, sha512: legacySHA512(in: source))]
+        } else { return nil }
 
-        return candidates.first
+        let ranked: [(file: ManifestFile, rank: Int)] = files.compactMap { file in
+            guard let url = URL(string: file.url),
+                  ["zip", "dmg"].contains(url.pathExtension.lowercased()) else { return nil }
+            // Only complete architecture tokens in the filename establish a
+            // preference. Directory and hostname text cannot select an asset.
+            let filename = url.lastPathComponent.lowercased()
+            let arm = filename.range(of: #"(?:^|[^a-z0-9])(?:arm64|aarch64)(?:$|[^a-z0-9])"#,
+                                     options: .regularExpression) != nil
+            let intel = filename.range(of: #"(?:^|[^a-z0-9])(?:x64|x86_64)(?:$|[^a-z0-9])"#,
+                                       options: .regularExpression) != nil
+            let unsupported = filename.range(of: #"(?:^|[^a-z0-9])ia32(?:$|[^a-z0-9])"#,
+                                             options: .regularExpression) != nil
+            guard !unsupported else { return nil }
+            #if arch(arm64)
+            guard !intel else { return nil }
+            return (file, arm ? 0 : 1)
+            #else
+            guard !arm else { return nil }
+            return (file, intel ? 0 : 1)
+            #endif
+        }
+        guard let bestRank = ranked.map(\.rank).min() else { return nil }
+        let preferred = ranked.filter { $0.rank == bestRank }.map(\.file)
+        // Prefer a unique ZIP within the best architecture rank. Multiple files
+        // of that format remain ambiguous; do not escape the tie via a DMG.
+        for format in ["zip", "dmg"] {
+            let candidates = preferred.filter { URL(string: $0.url)?.pathExtension.lowercased() == format }
+            if candidates.count > 1 { return nil }
+            if let selected = candidates.first { return selected }
+        }
+        return nil
+    }
+
+    /// Legacy manifests bind a top-level hash to their top-level path. An
+    /// advertised but invalid/empty hash stays invalid instead of becoming nil.
+    private static func legacySHA512(in source: String) -> String? {
+        let lines = source.components(separatedBy: .newlines)
+        var result: String?
+        var found = false
+        for (index, line) in lines.enumerated() {
+            guard line.first?.isWhitespace != true,
+                  let separator = line.firstIndex(of: ":"),
+                  line[..<separator].trimmingCharacters(in: .whitespaces) == "sha512" else { continue }
+            guard !found else { return "" }
+            found = true
+            let value = unquoted(String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespaces))
+            guard [">", ">-", ">+", "|", "|-", "|+"].contains(value) else {
+                result = value
+                continue
+            }
+            var digest = ""
+            for continuation in lines.dropFirst(index + 1) {
+                let content = continuation.trimmingCharacters(in: .whitespacesAndNewlines)
+                if content.isEmpty { continue }
+                guard continuation.first?.isWhitespace == true else { break }
+                guard content.unicodeScalars.allSatisfy({
+                    CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=").contains($0)
+                }) else { return "" }
+                digest += content
+            }
+            result = digest
+        }
+        return result
     }
 
     private static func yamlBlockValue(for key: String, in source: String) -> String? {

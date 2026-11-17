@@ -134,6 +134,7 @@ enum ElectronUpdateChecker {
                 adamID: nil,
                 appStoreURL: nil,
                 externalURL: externalURL?.absoluteString,
+                nativeArtifact: metadata.nativeArtifact,
                 status: .idle,
                 progress: 0,
                 isSelectedForUpdate: false,
@@ -197,7 +198,8 @@ enum ElectronUpdateChecker {
             releaseDate: metadata.releaseDate ?? release.releaseDate,
             releaseNotes: metadata.releaseNotes ?? release.releaseNotes,
             downloadURL: metadata.downloadURL,
-            releasePageURL: metadata.releasePageURL
+            releasePageURL: metadata.releasePageURL,
+            nativeArtifact: metadata.nativeArtifact
         )
     }
 

@@ -27,12 +27,16 @@ struct OfficialSourceRule: Codable, Sendable {
     let usesBuild: Bool
     let channelPolicy: ChannelPolicy
     let allowsNoUpdate204: Bool
+    let nativeDownloadURLKey: String?
+    let nativeSHA256Key: String?
+    let nativeFormat: NativeUpdateArtifact.Format?
 
     init(bundleIdentifier: String, kind: Kind, endpointTemplate: String, page: String,
          versionKey: String? = nil, productCode: String? = nil, localProductCode: String? = nil,
          githubOwner: String? = nil, githubRepository: String? = nil,
          usesBuild: Bool = false, channelPolicy: ChannelPolicy = .numericStable,
-         allowsNoUpdate204: Bool = false) {
+         allowsNoUpdate204: Bool = false, nativeDownloadURLKey: String? = nil,
+         nativeSHA256Key: String? = nil, nativeFormat: NativeUpdateArtifact.Format? = nil) {
         self.bundleIdentifier = bundleIdentifier
         self.kind = kind
         self.endpointTemplate = endpointTemplate
@@ -45,11 +49,15 @@ struct OfficialSourceRule: Codable, Sendable {
         self.usesBuild = usesBuild
         self.channelPolicy = channelPolicy
         self.allowsNoUpdate204 = allowsNoUpdate204
+        self.nativeDownloadURLKey = nativeDownloadURLKey
+        self.nativeSHA256Key = nativeSHA256Key
+        self.nativeFormat = nativeFormat
     }
 
     private enum CodingKeys: String, CodingKey {
         case bundleIdentifier, kind, endpointTemplate, page, versionKey, productCode, localProductCode
         case githubOwner, githubRepository, usesBuild, channelPolicy, allowsNoUpdate204
+        case nativeDownloadURLKey, nativeSHA256Key, nativeFormat
     }
 
     init(from decoder: Decoder) throws {
@@ -66,6 +74,9 @@ struct OfficialSourceRule: Codable, Sendable {
         usesBuild = try fields.decodeIfPresent(Bool.self, forKey: .usesBuild) ?? false
         channelPolicy = try fields.decodeIfPresent(ChannelPolicy.self, forKey: .channelPolicy) ?? .numericStable
         allowsNoUpdate204 = try fields.decodeIfPresent(Bool.self, forKey: .allowsNoUpdate204) ?? false
+        nativeDownloadURLKey = try fields.decodeIfPresent(String.self, forKey: .nativeDownloadURLKey)
+        nativeSHA256Key = try fields.decodeIfPresent(String.self, forKey: .nativeSHA256Key)
+        nativeFormat = try fields.decodeIfPresent(NativeUpdateArtifact.Format.self, forKey: .nativeFormat)
     }
 }
 
@@ -178,6 +189,15 @@ struct UpdaterRuleSet: Codable, Sendable {
               !rule.allowsNoUpdate204 || rule.kind == .json,
               !rule.usesBuild || [.studio, .brave, .jetbrains].contains(rule.kind) else {
             throw ValidationError.invalidDocument
+        }
+        if rule.nativeDownloadURLKey != nil || rule.nativeSHA256Key != nil || rule.nativeFormat != nil {
+            guard rule.kind == .json,
+                  let urlKey = rule.nativeDownloadURLKey, let hashKey = rule.nativeSHA256Key,
+                  matches(urlKey, #"^[A-Za-z][A-Za-z0-9_]{0,63}$"#),
+                  matches(hashKey, #"^[A-Za-z][A-Za-z0-9_]{0,63}$"#),
+                  urlKey != hashKey, urlKey != rule.versionKey, hashKey != rule.versionKey else {
+                throw ValidationError.invalidDocument
+            }
         }
         switch rule.channelPolicy {
         case .numericStable: guard rule.kind != .studio else { throw ValidationError.invalidDocument }

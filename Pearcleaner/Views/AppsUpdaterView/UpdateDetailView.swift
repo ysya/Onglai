@@ -448,7 +448,7 @@ struct UpdateDetailView: View {
                 Task { await updateManager.updateApp(app) }
             }
         } label: {
-            Text(app.source.isExternalUpdate ? "Open App" :
+            Text(app.source.isExternalUpdate && !app.canInstallNatively ? "Open App" :
                  app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
         .buttonStyle(.plain)
@@ -457,8 +457,8 @@ struct UpdateDetailView: View {
         .background(Color.green)
         .foregroundStyle(.white)
         .clipShape(Capsule())
-        .disabled(app.status != .idle)
-        .opacity(app.status == .idle ? 1.0 : 0.5)
+        .disabled(!updateManager.canStartUpdate(app))
+        .opacity(updateManager.canStartUpdate(app) ? 1.0 : 0.5)
     }
 
     private func buildExpandableActionButton(for app: UpdateableApp) -> ExpandableActionButton {
@@ -548,11 +548,11 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.source.isExternalUpdate ? String(localized: "Open App") :
+                title: app.source.isExternalUpdate && !app.canInstallNatively ? String(localized: "Open App") :
                        app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
                 foregroundColor: .white,
                 backgroundColor: .green,
-                isDisabled: app.status != .idle,
+                isDisabled: !updateManager.canStartUpdate(app),
                 action: {
                     if app.isIOSApp, let appStoreURL = app.appStoreURL {
                         openInAppStore(urlString: appStoreURL)

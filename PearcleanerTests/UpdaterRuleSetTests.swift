@@ -9,6 +9,30 @@ final class UpdaterRuleSetTests: XCTestCase {
         return components.url!.absoluteString
     }
 
+    func testNativeJSONRuleFieldsAreOptionalAndConservativelyValidated() throws {
+        var rule = UpdaterRuleFixture.official()
+        rule["nativeDownloadURLKey"] = "url"
+        rule["nativeSHA256Key"] = "sha256hash"
+        rule["nativeFormat"] = "zip"
+        let rules = try UpdaterRuleSet.decodeValidated(UpdaterRuleFixture.data(officialSources: [rule]))
+        XCTAssertEqual(rules.officialSources.first?.nativeDownloadURLKey, "url")
+        XCTAssertEqual(rules.officialSources.first?.nativeFormat, .zip)
+        for (field, invalid) in [("nativeDownloadURLKey", "nested.url"), ("nativeSHA256Key", ""), ("nativeFormat", "pkg")] {
+            var bad = rule
+            bad[field] = invalid
+            XCTAssertThrowsError(try UpdaterRuleSet.decodeValidated(UpdaterRuleFixture.data(officialSources: [bad])))
+        }
+        for field in ["nativeDownloadURLKey", "nativeSHA256Key"] {
+            var incomplete = rule
+            incomplete.removeValue(forKey: field)
+            XCTAssertThrowsError(try UpdaterRuleSet.decodeValidated(UpdaterRuleFixture.data(officialSources: [incomplete])))
+        }
+        var wrongAdapter = rule
+        wrongAdapter["kind"] = "linear"
+        wrongAdapter.removeValue(forKey: "versionKey")
+        XCTAssertThrowsError(try UpdaterRuleSet.decodeValidated(UpdaterRuleFixture.data(officialSources: [wrongAdapter])))
+    }
+
     func testDefaultsAndExactLookupsPreserveArchitectureAndIdentity() throws {
         let rules = try UpdaterRuleSet.decodeValidated(UpdaterRuleFixture.data(
             sparkleFeeds: [["bundleIdentifier": "com.example.App", "feedURL": "https://updates.example.com/feed.xml", "architectures": ["arm64"]]],

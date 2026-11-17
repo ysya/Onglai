@@ -4,6 +4,40 @@ import XCTest
 final class OfficialUpdateCheckerTests: XCTestCase {
     private let bundledRules = UpdaterRuleSet.bundled()
 
+    func testExplicitNativeJSONMetadataProvidesAnIndependentArchiveAndPage() async throws {
+        let configured = try rules([["bundleIdentifier": "com.example.App", "kind": "json", "versionKey": "version",
+                                    "endpointTemplate": "https://updates.example.com/latest", "page": "https://example.com/download",
+                                    "nativeDownloadURLKey": "archive", "nativeSHA256Key": "sha256", "nativeFormat": "zip"]])
+        let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("NativeFixture.app")
+        let result = await OfficialUpdateChecker.checkForUpdates(apps: [app("com.example.App", path: path)], rules: configured) { request, _ in
+            self.response(request, "{\"version\":\"2.0.0\",\"archive\":\"https://downloads.example.com/release?id=2\",\"sha256\":\"" + String(repeating: "a", count: 64) + "\"}")
+        }
+        let update = try XCTUnwrap(result.updates.first)
+        XCTAssertEqual(update.nativeArtifact?.url.absoluteString, "https://downloads.example.com/release?id=2")
+        XCTAssertEqual(update.nativeArtifact?.digest?.algorithm, .sha256)
+        XCTAssertEqual(update.officialUpdateURL?.absoluteString, "https://example.com/download")
+        XCTAssertTrue(update.canInstallNatively)
+        XCTAssertFalse(update.isSelectedForUpdate)
+    }
+
+    func testIncompleteUnsafeOrMalformedNativeMetadataFallsBackToOpenApp() async throws {
+        let configured = try rules([["bundleIdentifier": "com.example.App", "kind": "json", "versionKey": "version",
+                                    "endpointTemplate": "https://updates.example.com/latest", "page": "https://example.com/download",
+                                    "nativeDownloadURLKey": "archive", "nativeSHA256Key": "sha256"]])
+        for payload in [#"{"version":"2.0.0"}"#,
+                        #"{"version":"2.0.0","archive":"http://downloads.example.com/App.zip","sha256":"invalid"}"#,
+                        #"{"version":"2.0.0","archive":"https://downloads.example.com/App.zip","sha256":"invalid"}"#] {
+            let result = await OfficialUpdateChecker.checkForUpdates(apps: [app("com.example.App")], rules: configured) { request, _ in
+                self.response(request, payload)
+            }
+            XCTAssertEqual(result.updates.count, 1)
+            XCTAssertNil(result.updates.first?.nativeArtifact)
+            XCTAssertFalse(result.updates.first?.canUpdate ?? true)
+            XCTAssertTrue(result.failures.isEmpty)
+            XCTAssertNotNil(result.updates.first?.officialUpdateURL)
+        }
+    }
+
     func testAggregatesUpdatesCurrentAndFailuresWithoutTreatingFailuresAsCurrent() async {
         let apps = [app("com.microsoft.VSCode"), app("com.hnc.Discord"),
                     app("com.anthropic.claudefordesktop"), app("com.postmanlabs.mac")]

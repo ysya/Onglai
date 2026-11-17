@@ -2,6 +2,80 @@ import XCTest
 @testable import Pearcleaner
 
 final class CatalogUpdateCheckerTests: XCTestCase {
+    func testNativeCatalogAcceptsOnlyASingleDirectAppRecipe() throws {
+        let common: [String: Any] = ["token": "example", "name": ["Example"], "version": "2.0",
+                                     "url": "https://example.com/Example.zip", "sha256": String(repeating: "a", count: 64)]
+        for (artifacts, supported) in [
+            ([["app": ["Example.app"]], ["zap": [["trash": "~/Library/Preferences/com.example.editor.plist"]]]], true),
+            ([["app": ["Example.app"]], ["pkg": ["Helper.pkg"]]], false),
+            ([["app": ["Example.app"]], ["postflight": NSNull()]], false),
+            ([["app": ["Example.app"]], ["app": ["Helper.app"]]], false),
+            ([["app": ["Example.app"]], ["binary": ["helper"]]], false)
+        ] as [([[String: Any]], Bool)] {
+            var object = common
+            object["artifacts"] = artifacts
+            let cask = try XCTUnwrap(CatalogUpdateChecker.parseCatalog(JSONSerialization.data(withJSONObject: [object])).first)
+            XCTAssertEqual(cask.nativeArtifact(version: "2.0", build: nil) != nil, supported)
+        }
+    }
+
+    func testNativeCatalogNoCheckAndUnsupportedPayloadsRemainConservative() throws {
+        for (url, hash, supported) in [("https://example.com/Example.dmg", "no_check", true),
+                                       ("https://example.com/Example.zip", "invalid", false),
+                                       ("https://example.com/Example.pkg", "no_check", false),
+                                       ("https://example.com/download", "no_check", false)] {
+            let object: [String: Any] = ["token": "example", "version": "2.0", "url": url, "sha256": hash,
+                                         "artifacts": [["app": ["Example.app"]]]]
+            let cask = try XCTUnwrap(CatalogUpdateChecker.parseCatalog(JSONSerialization.data(withJSONObject: [object])).first)
+            XCTAssertEqual(cask.nativeArtifact(version: "2.0", build: nil) != nil, supported)
+        }
+    }
+
+    func testNativeCapabilityExcludesStoreWebWrappedSystemSelfAndManagedTargets() {
+        let artifact = NativeUpdateArtifact(url: URL(string: "https://example.com/Example.zip")!, version: "2.0")!
+        let parent = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+        for (target, supported) in [(app(parent: parent), true), (app(parent: parent, isAppStore: true), false),
+                                    (app(parent: parent, webApp: true), false), (app(parent: parent, wrapped: true), false),
+                                    (app(parent: "/System/Applications"), false),
+                                    (app(filename: "Example.bundle", parent: parent), false),
+                                    (app(parent: parent, cask: "example"), false),
+                                    (app(parent: parent, bundleID: Bundle.main.bundleIdentifier ?? ""), false)] {
+            var update = UpdateableApp(appInfo: target, availableVersion: "2.0", availableBuildNumber: nil,
+                                       source: .catalog, adamID: nil, appStoreURL: nil,
+                                       releaseTitle: nil, releaseDescription: nil, releaseNotesLink: nil, releaseDate: nil,
+                                       isPreRelease: false, isIOSApp: false, foundInRegion: nil, appcastItem: nil)
+            update.nativeArtifact = artifact
+            XCTAssertEqual(update.canInstallNatively, supported)
+            XCTAssertEqual(update.canUpdate, supported)
+        }
+    }
+
+    func testNativeCapabilityRequiresAnActuallyWritableParentDirectory() throws {
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("operator-notes/native-model-fixtures").appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.path)
+            try? FileManager.default.removeItem(at: fixture)
+        }
+        let artifact = NativeUpdateArtifact(url: URL(string: "https://example.com/Example.zip")!, version: "2.0")!
+        var update = UpdateableApp(appInfo: app(parent: fixture.path), availableVersion: "2.0", availableBuildNumber: nil,
+                                   source: .catalog, adamID: nil, appStoreURL: nil,
+                                   externalURL: "https://example.com/download", nativeArtifact: artifact,
+                                   releaseTitle: nil, releaseDescription: nil, releaseNotesLink: nil, releaseDate: nil,
+                                   isPreRelease: false, isIOSApp: false, foundInRegion: nil, appcastItem: nil)
+        XCTAssertTrue(update.canInstallNatively)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.path)
+        guard !FileManager.default.isWritableFile(atPath: fixture.path) else {
+            throw XCTSkip("The test process can write despite synthetic directory permissions")
+        }
+        XCTAssertFalse(update.canInstallNatively)
+        XCTAssertFalse(update.canUpdate)
+        XCTAssertNotNil(update.officialUpdateURL)
+        update.nativeArtifact = nil
+        XCTAssertFalse(update.canInstallNatively)
+    }
+
     func testParsesExactIdentityHintsAndPlatformVariation() throws {
         let data = Data(#"""
         [{"token":"example","name":["Example","Example Editor"],"version":"1.0",

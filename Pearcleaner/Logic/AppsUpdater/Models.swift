@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Darwin
 import SwiftUI
 import Sparkle
 
@@ -114,6 +115,7 @@ struct UpdateableApp: Identifiable, Hashable {
     let adamID: UInt64?
     let appStoreURL: String?  // Store URL from iTunes API for "Open in App Store" button
     var externalURL: String? = nil  // Official website offered separately from opening the installed app
+    var nativeArtifact: NativeUpdateArtifact? = nil
     var status: UpdateStatus = .idle
     var progress: Double = 0.0
     var isSelectedForUpdate: Bool = true  // Default to selected for "Update All" queue
@@ -132,7 +134,33 @@ struct UpdateableApp: Identifiable, Hashable {
     let appcastItem: SUAppcastItem?
 
     var canUpdate: Bool {
-        source == .homebrew || source == .sparkle
+        source == .homebrew || source == .sparkle || canInstallNatively
+    }
+
+    /// Source ownership and target shape are checked again by the installer before replacement.
+    var canInstallNatively: Bool {
+        guard geteuid() != 0 else { return false }
+        let target = appInfo.path.standardizedFileURL.resolvingSymlinksInPath()
+        let path = target.path
+        guard source.isExternalUpdate, nativeArtifact != nil, target.isFileURL,
+              target.pathExtension.lowercased() == "app", !appInfo.bundleIdentifier.isEmpty,
+              !appInfo.webApp, !appInfo.wrapped, !appInfo.isAppStore, !isIOSApp,
+              appInfo.cask == nil, !appInfo.steam,
+              appInfo.bundleIdentifier != Bundle.main.bundleIdentifier,
+              target != Bundle.main.bundleURL.standardizedFileURL.resolvingSymlinksInPath(),
+              !["/System", "/Library", "/usr", "/bin", "/sbin", "/private", "/opt", "/Volumes"].contains(where: {
+                  path == $0 || path.hasPrefix($0 + "/")
+              }),
+              !path.hasPrefix("/Applications/Utilities/"),
+              FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path),
+              !FileManager.default.fileExists(atPath: target.appendingPathComponent("Contents/_MASReceipt/receipt").path) else { return false }
+        // An app nested inside another bundle is not a standalone replaceable target.
+        var parent = target.deletingLastPathComponent()
+        while parent.path != "/" {
+            if parent.pathExtension.lowercased() == "app" { return false }
+            parent.deleteLastPathComponent()
+        }
+        return true
     }
 
     var officialUpdateURL: URL? {

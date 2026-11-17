@@ -1,8 +1,8 @@
 import Foundation
 import Darwin
 
-/// Read-only checks of explicitly verified vendor endpoints. These results only
-/// open official landing pages; they never download installers or adopt feeds.
+/// Checks explicitly verified vendor endpoints and retains opt-in archive metadata.
+/// Publisher landing pages remain separate from installation descriptors.
 enum OfficialUpdateChecker {
     typealias DocumentLoader = (URLRequest, Int) async throws -> (Data, HTTPURLResponse)
     private static let maximumBytes = 2 * 1024 * 1024
@@ -81,7 +81,8 @@ enum OfficialUpdateChecker {
             if comparison == .orderedAscending {
                 return .update(UpdateableApp(
                     appInfo: app, availableVersion: release.version, availableBuildNumber: release.build,
-                    source: .official, adamID: nil, appStoreURL: nil, externalURL: profile.page, isSelectedForUpdate: false,
+                    source: .official, adamID: nil, appStoreURL: nil, externalURL: profile.page,
+                    nativeArtifact: release.nativeArtifact, isSelectedForUpdate: false,
                     releaseTitle: nil, releaseDescription: nil, releaseNotesLink: nil, releaseDate: nil,
                     isPreRelease: false, isIOSApp: false, foundInRegion: nil,
                     fetchedReleaseNotes: nil, appcastItem: nil
@@ -136,12 +137,14 @@ enum OfficialUpdateChecker {
         let version: String
         let build: String?
         let comparisonVersion: String
+        let nativeArtifact: NativeUpdateArtifact?
 
-        init(_ version: String, build: String? = nil, compareBuild: Bool = false) throws {
+        init(_ version: String, build: String? = nil, compareBuild: Bool = false, nativeArtifact: NativeUpdateArtifact? = nil) throws {
             guard isNumeric(version), build.map(isNumeric) ?? true else { throw CheckError.invalidVersion }
             self.version = version
             self.build = build
             self.comparisonVersion = compareBuild ? (build ?? "") : version
+            self.nativeArtifact = nativeArtifact
             guard isNumeric(comparisonVersion) else { throw CheckError.invalidVersion }
         }
     }
@@ -187,7 +190,7 @@ enum OfficialUpdateChecker {
         case .json:
             guard let key = profile.versionKey, let version = object[key] as? String else { throw CheckError.invalidVersion }
             try checkMinimum(object["minimumSystemVersion"] as? String, current: macOSVersion())
-            return try Release(version)
+            return try Release(version, nativeArtifact: nativeArtifact(object, profile: profile, version: version))
         case .proton:
             guard let releases = object["Releases"] as? [[String: Any]], !releases.isEmpty else { throw CheckError.invalidResponse }
             // Without the app's cohort ID we can only assert fully released updates.
@@ -236,6 +239,17 @@ enum OfficialUpdateChecker {
             return try Release(version)
         default: throw CheckError.invalidResponse
         }
+    }
+
+    private static func nativeArtifact(_ object: [String: Any], profile: OfficialSourceRule,
+                                       version: String) -> NativeUpdateArtifact? {
+        guard profile.kind == .json,
+              let urlKey = profile.nativeDownloadURLKey, let hashKey = profile.nativeSHA256Key,
+              let rawURL = object[urlKey] as? String, let url = URL(string: rawURL),
+              let hash = object[hashKey] as? String else { return nil }
+        // Missing or malformed optional metadata only disables native installation.
+        return NativeUpdateArtifact(url: url, version: version,
+                                    digest: .init(algorithm: .sha256, value: hash), format: profile.nativeFormat)
     }
 
     private static func validateInstalledChannel(_ app: AppInfo, profile: OfficialSourceRule) throws {

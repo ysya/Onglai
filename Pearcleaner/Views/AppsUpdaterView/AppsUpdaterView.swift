@@ -79,7 +79,7 @@ struct AppsUpdaterView: View {
 
     private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
         var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
-            (String(localized: "Update Available"), { $0.section == .available }, true, updateManager.scanningSources.contains(.homebrew) || updateManager.scanningSources.contains(.sparkle)),
+            (String(localized: "Update Available"), { $0.section == .available }, true, [UpdateSource.homebrew, .sparkle, .official, .electron, .catalog].contains { updateManager.scanningSources.contains($0) }),
             (String(localized: "External Update"), { $0.section == .external }, true, [UpdateSource.appStore, .electron, .official, .catalog].contains { updateManager.scanningSources.contains($0) }),
             (String(localized: "Error"), { $0.section == .attention }, true, false),
             (String(localized: "Check in App"), { $0.section == .unverified }, true, false)

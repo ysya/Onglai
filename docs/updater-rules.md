@@ -67,6 +67,13 @@ Optional policy fields are:
 | `usesBuild` | Defaults to `false`; only the Studio, Brave, and JetBrains adapters support build comparison. |
 | `channelPolicy` | Defaults to `numericStable`. `vscodeStable` is available to JSON adapters; `androidStudioStable` is required for Studio. The installed app must pass the selected channel checks. |
 | `allowsNoUpdate204` | Defaults to `false`. Only a JSON adapter may opt in when its verified endpoint explicitly uses HTTP 204 to mean no update. An empty response from another endpoint is not proof that the app is current. |
+| `nativeDownloadURLKey` | Optional JSON object field containing the explicit HTTPS ZIP/DMG download URL. Requires `nativeSHA256Key`; only `json` supports this field. |
+| `nativeSHA256Key` | Optional JSON object field containing the exact archive's 64-character hexadecimal SHA256. Requires `nativeDownloadURLKey`. |
+| `nativeFormat` | Optional `zip` or `dmg` when the verified endpoint URL has no archive extension. Requires both native keys. Otherwise the format is inferred from the URL extension. |
+
+Native keys name distinct, top-level scalar fields and cannot be the version field. Missing fields or invalid download metadata leave the update available through Open App and its independent official page; they do not make a successful version check fail. A rule does not bypass local app eligibility, archive identity, architecture, code signature or installation checks. Native updates remain unselected by default.
+
+The bundled Visual Studio Code rule uses the publisher's explicit `url` and `sha256hash` response fields with ZIP format. These fields were verified against the [official Apple silicon stable metadata](https://update.code.visualstudio.com/api/update/darwin-arm64/stable/latest); the version endpoint's `version` field is a commit hash, so `productVersion` remains the release version. No URL is constructed from that hash. Existing JSON rules without native fields retain their prior behavior; GitHub releases do not infer installation eligibility from asset filenames.
 
 The only supported endpoint placeholders are:
 

@@ -1,6 +1,72 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Open App to use its updater or download the update from the publisher." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請按「開啟 App」使用內建更新程式，或向發行者下載更新。"
+          }
+        }
+      }
+    },
+    "This app cannot be replaced with your current permissions. Open App to use its updater or download the update from the publisher." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前的權限無法替換此 App。請按「開啟 App」使用內建更新程式，或向發行者下載更新。"
+          }
+        }
+      }
+    },
+    "The app is still running. Quit it and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 仍在執行中，請結束後再試一次。"
+          }
+        }
+      }
+    },
+    "Quit and Update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束並更新"
+          }
+        }
+      }
+    },
+    "%@ must quit before installing the update. Save your work first. You can cancel in the app's save dialog." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必須先結束 %@ 才能安裝更新。請先儲存工作，你也可以在 App 的儲存對話框中取消。"
+          }
+        }
+      }
+    },
+    "Quit App to Update?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要結束 App 以更新嗎？"
+          }
+        }
+      }
+    },
     "%lld items could not be moved. Review the remaining files and try again." : {
       "extractionState" : "manual",
       "localizations" : {

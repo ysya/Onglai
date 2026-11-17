@@ -2,6 +2,177 @@ import XCTest
 @testable import Pearcleaner
 
 final class ElectronUpdateMetadataTests: XCTestCase {
+    func testNativeArchiveRetainsTheSelectedFilesDigestAndQuery() throws {
+        let hash = Data(repeating: 1, count: 64).base64EncodedString()
+        let metadata = try ElectronUpdateMetadataParser.parseManifest("""
+        version: 2.0.0
+        files:
+          - url: Desktop-universal.zip?release=2
+            sha512: \(hash)
+          - url: Desktop-universal.dmg
+            sha512: \(Data(repeating: 2, count: 64).base64EncodedString())
+        sha512: unrelated-top-level-digest
+        """, baseURL: URL(string: "https://example.com/releases/?scope=public")!)
+        XCTAssertEqual(metadata.nativeArtifact?.url.absoluteString, "https://example.com/releases/Desktop-universal.zip?release=2")
+        XCTAssertEqual(metadata.nativeArtifact?.digest, .init(algorithm: .sha512, value: hash))
+        XCTAssertEqual(metadata.nativeArtifact?.format, .zip)
+    }
+
+    func testFoldedAndLiteralDigestScalarsStayWithTheirExactFileRecord() throws {
+        let selectedHash = Data(repeating: 3, count: 64).base64EncodedString()
+        let otherHash = Data(repeating: 4, count: 64).base64EncodedString()
+        for marker in [">-", ">", "|-", "|"] {
+            let metadata = try ElectronUpdateMetadataParser.parseManifest("""
+            version: 2.0.0
+            files:
+              - url: Desktop-universal.dmg
+                sha512: \(marker)
+                  \(otherHash)
+              - url: Desktop-universal.zip?release=2
+                sha512: \(marker)
+                  \(selectedHash.prefix(44))
+                  \(selectedHash.dropFirst(44))
+                size: 200
+            sha512: \(otherHash)
+            """, baseURL: URL(string: "https://example.com/releases/?scope=public")!)
+            XCTAssertEqual(metadata.nativeArtifact?.digest, .init(algorithm: .sha512, value: selectedHash), marker)
+            XCTAssertEqual(metadata.nativeArtifact?.url.absoluteString,
+                           "https://example.com/releases/Desktop-universal.zip?release=2", marker)
+        }
+    }
+
+    func testLegacyPathRetainsTopLevelFoldedAndLiteralSHA512() throws {
+        let hash = Data(repeating: 7, count: 64).base64EncodedString()
+        for marker in [">-", ">", "|-", "|"] {
+            let metadata = try ElectronUpdateMetadataParser.parseManifest("""
+            version: 2.0.0
+            path: Desktop.zip?release=legacy
+            sha512: \(marker)
+              \(hash.prefix(44))
+              \(hash.dropFirst(44))
+            releaseDate: '2026-11-17'
+            """, baseURL: URL(string: "https://publisher.example/releases/?scope=public")!)
+            XCTAssertEqual(metadata.nativeArtifact?.digest, .init(algorithm: .sha512, value: hash), marker)
+            XCTAssertEqual(metadata.nativeArtifact?.url.query, "release=legacy", marker)
+        }
+    }
+
+    func testLegacyMalformedAdvertisedDigestNeverBecomesDigestlessArtifact() throws {
+        for digest in ["sha512:", "sha512: >-\n  invalid", "sha512: |-\n  invalid: nested", "sha512: >-", "sha512: invalid"] {
+            let metadata = try ElectronUpdateMetadataParser.parseManifest("version: 2.0.0\npath: Desktop.zip\n" + digest,
+                                                                           baseURL: URL(string: "https://publisher.example/")!)
+            XCTAssertNil(metadata.nativeArtifact)
+            XCTAssertEqual(metadata.version, "2.0.0")
+        }
+    }
+
+    func testDigestBlocksDoNotConsumeAnotherRecordOrBypassAmbiguity() throws {
+        let hash = Data(repeating: 3, count: 64).base64EncodedString()
+        for files in [
+            "  - url: Desktop.zip\n    sha512: >-\n  - url: Desktop.dmg\n    sha512: \(hash)",
+            "  - url: Desktop.zip\n    sha512: |-\n      not: base64",
+            "  - url: First.zip\n    sha512: >-\n      \(hash)\n  - url: Second.zip\n    sha512: |-\n      \(hash)"
+        ] {
+            let metadata = try ElectronUpdateMetadataParser.parseManifest("version: 2.0.0\nfiles:\n" + files,
+                                                                           baseURL: URL(string: "https://example.com/")!)
+            XCTAssertNil(metadata.nativeArtifact)
+        }
+    }
+
+    func testAmbiguousArchivesAndInvalidDigestsFallBackWithoutScanFailure() throws {
+        for files in [
+            "  - url: First.zip\n  - url: Second.zip",
+            "  - url: Desktop.zip\n    sha512: invalid",
+            "  - url: Desktop.pkg"
+        ] {
+            let metadata = try ElectronUpdateMetadataParser.parseManifest("version: 2.0.0\nfiles:\n" + files,
+                                                                           baseURL: URL(string: "https://example.com/")!)
+            XCTAssertNil(metadata.nativeArtifact)
+            XCTAssertEqual(metadata.version, "2.0.0")
+        }
+    }
+
+    func testExactNativeArchitectureOutranksNeutralArchivesWithFoldedDigest() throws {
+        #if arch(arm64)
+        let nativeArchitecture = "arm64"
+        #else
+        let nativeArchitecture = "x64"
+        #endif
+        let nativeHash = Data(repeating: 5, count: 64).base64EncodedString()
+        let neutralHash = Data(repeating: 6, count: 64).base64EncodedString()
+        let configuration = try ElectronUpdateMetadataParser.parseConfiguration("provider: generic\nurl: https://publisher.example/releases\nchannel: latest")
+        // Preserve the publisher's ZIP/DMG, neutral/native and folded hash shape.
+        let metadata = try ElectronUpdateMetadataParser.parseManifest("""
+        version: 2026.11.91422-latest
+        files:
+          - url: Lens-2026.11.91422-latest-mac.zip
+            sha512: >-
+              \(neutralHash)
+          - url: Lens-2026.11.91422-latest.dmg
+            sha512: >-
+              \(neutralHash)
+          - url: Lens-2026.11.91422-latest-\(nativeArchitecture)-mac.zip?release=exact
+            sha512: >-
+              \(nativeHash)
+          - url: Lens-2026.11.91422-latest-\(nativeArchitecture).dmg
+            sha512: >-
+              \(neutralHash)
+          - url: Lens-2026.11.91422-latest-\(nativeArchitecture).dmg
+            sha512: >-
+              \(neutralHash)
+        path: Lens-2026.11.91422-latest-mac.zip
+        sha512: \(neutralHash)
+        """, baseURL: URL(string: "https://publisher.example/releases/?scope=public")!, configuration: configuration)
+        XCTAssertEqual(metadata.nativeArtifact?.url.lastPathComponent, "Lens-2026.11.91422-latest-\(nativeArchitecture)-mac.zip")
+        XCTAssertEqual(metadata.nativeArtifact?.url.query, "release=exact")
+        XCTAssertEqual(metadata.nativeArtifact?.digest?.value, nativeHash)
+    }
+
+    func testNativeArchitecturePriorityRejectsTiesAndIgnoresArchitectureTextInDirectory() throws {
+        #if arch(arm64)
+        let nativeArchitecture = "arm64"
+        let oppositeArchitecture = "x64"
+        #else
+        let nativeArchitecture = "x64"
+        let oppositeArchitecture = "arm64"
+        #endif
+        let baseURL = URL(string: "https://publisher.example/\(nativeArchitecture)/")!
+        let tie = try ElectronUpdateMetadataParser.parseManifest("""
+        version: 2.0.0
+        files:
+          - url: First-\(nativeArchitecture).zip
+          - url: Second-\(nativeArchitecture).zip
+          - url: Neutral.zip
+        """, baseURL: baseURL)
+        XCTAssertNil(tie.nativeArtifact)
+        let exact = try ElectronUpdateMetadataParser.parseManifest("""
+        version: 2.0.0
+        files:
+          - url: First.zip
+          - url: Second.zip
+          - url: Opposite-\(oppositeArchitecture).zip
+        """, baseURL: baseURL)
+        XCTAssertNil(exact.nativeArtifact)
+        let nativeDMG = try ElectronUpdateMetadataParser.parseManifest("""
+        version: 2.0.0
+        files:
+          - url: Neutral.zip
+          - url: Native-\(nativeArchitecture).dmg
+        """, baseURL: baseURL)
+        XCTAssertEqual(nativeDMG.nativeArtifact?.format, .dmg)
+    }
+
+    func testNativeArchiveNeverFallsBackToTheOppositeArchitecture() throws {
+        #if arch(arm64)
+        let filename = "Desktop-x64.zip"
+        #else
+        let filename = "Desktop-arm64.zip"
+        #endif
+        let metadata = try ElectronUpdateMetadataParser.parseManifest("version: 2.0.0\nfiles:\n  - url: " + filename,
+                                                                       baseURL: URL(string: "https://example.com/")!)
+        XCTAssertNil(metadata.nativeArtifact)
+    }
+
     func testParsesPublicDigitalOceanSpacesFeed() throws {
         let source = """
         provider: spaces
