@@ -4,6 +4,8 @@ import Darwin
 
 /// Ephemeral, credential-free transport streams bounded response chunks directly to disk.
 final class NativeArtifactDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    typealias Fallback = @Sendable (URL, URL, @escaping @Sendable (Double) -> Void) async throws -> Void
+    private struct ForbiddenResponse: Error {}
     struct RetryableHTTPError: LocalizedError, Sendable {
         let statusCode: Int
         var errorDescription: String? {
@@ -15,9 +17,11 @@ final class NativeArtifactDownload: NSObject, URLSessionDataDelegate, @unchecked
     private let configuration: URLSessionConfiguration
     private let destination: URL
     private let progress: @Sendable (Double) -> Void
+    private let fallback: Fallback?
     private let lock = NSLock()
     private var session: URLSession?
     private var task: URLSessionDataTask?
+    private var fallbackTask: Task<Void, Error>?
     private var continuation: CheckedContinuation<Void, Error>?
     private var file: FileHandle?
     private var cancelled = false
@@ -26,14 +30,45 @@ final class NativeArtifactDownload: NSObject, URLSessionDataDelegate, @unchecked
     private var redirects = 0
     private var failure: Error?
 
-    init(destination: URL, configuration: URLSessionConfiguration = .ephemeral, progress: @escaping @Sendable (Double) -> Void) {
+    init(destination: URL, configuration: URLSessionConfiguration = .ephemeral,
+         fallback: Fallback? = { url, destination, progress in
+             try NativeCurlDownload.fetch(from: url, to: destination, progress: progress)
+         }, progress: @escaping @Sendable (Double) -> Void) {
         self.configuration = configuration
         self.destination = destination
         self.progress = progress
+        self.fallback = fallback
     }
 
     func fetch(_ url: URL) async throws {
         guard Self.isSafeURL(url) else { throw NativeInstallError.invalidPayload("The download requires a credential-free HTTPS URL.") }
+        try await withTaskCancellationHandler(operation: {
+            try Task.checkCancellation()
+            do { try await fetchWithURLSession(url) }
+            catch is ForbiddenResponse {
+                let task = try startFallback(url)
+                defer { lock.withLock { fallbackTask = nil } }
+                try await task.value
+            }
+        }, onCancel: { self.cancel() })
+    }
+
+    private func startFallback(_ url: URL) throws -> Task<Void, Error> {
+        try lock.withLock {
+            guard !cancelled else { throw CancellationError() }
+            guard let fallback else {
+                throw NativeInstallError.invalidPayload(String(localized: "The download server returned HTTP \(403)."))
+            }
+            let task = Task.detached(priority: .userInitiated) { [destination, progress] in
+                try Task.checkCancellation()
+                try await fallback(url, destination, progress)
+            }
+            fallbackTask = task
+            return task
+        }
+    }
+
+    private func fetchWithURLSession(_ url: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             lock.lock()
             defer { lock.unlock() }
@@ -62,24 +97,36 @@ final class NativeArtifactDownload: NSObject, URLSessionDataDelegate, @unchecked
         lock.lock()
         cancelled = true
         let task = task
+        let fallbackTask = fallbackTask
         lock.unlock()
         task?.cancel()
+        fallbackTask?.cancel()
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        guard let response = response as? HTTPURLResponse,
-              let url = response.url, Self.isSafeURL(url),
-              response.expectedContentLength <= Self.maximumBytes else {
-            failure = NativeInstallError.invalidPayload("The download server returned an unsupported response or an oversized archive.")
+        guard let response = response as? HTTPURLResponse else {
+            failure = NativeInstallError.invalidPayload(String(localized: "The download server did not return an HTTP response."))
+            completionHandler(.cancel)
+            return
+        }
+        guard let url = response.url, Self.isSafeURL(url) else {
+            failure = NativeInstallError.invalidPayload(String(localized: "The download server returned an unsafe download URL."))
+            completionHandler(.cancel)
+            return
+        }
+        guard response.expectedContentLength <= Self.maximumBytes else {
+            failure = NativeInstallError.invalidPayload(String(localized: "The download is too large (\(response.expectedContentLength) bytes; limit \(Self.maximumBytes) bytes)."))
             completionHandler(.cancel)
             return
         }
         guard response.statusCode == 200 else {
             if [408, 425, 429].contains(response.statusCode) || (500...599).contains(response.statusCode) {
                 failure = RetryableHTTPError(statusCode: response.statusCode)
+            } else if response.statusCode == 403, fallback != nil {
+                failure = ForbiddenResponse()
             } else {
-                failure = NativeInstallError.invalidPayload("The download server returned an unsupported response or an oversized archive.")
+                failure = NativeInstallError.invalidPayload(String(localized: "The download server returned HTTP \(response.statusCode)."))
             }
             completionHandler(.cancel)
             return
@@ -131,8 +178,8 @@ final class NativeArtifactDownload: NSObject, URLSessionDataDelegate, @unchecked
         let wasCancelled = cancelled
         lock.unlock()
         session.finishTasksAndInvalidate()
-        if let failure { continuation?.resume(throwing: failure) }
-        else if wasCancelled { continuation?.resume(throwing: CancellationError()) }
+        if wasCancelled { continuation?.resume(throwing: CancellationError()) }
+        else if let failure { continuation?.resume(throwing: failure) }
         else if let error { continuation?.resume(throwing: error) }
         else if received == 0 { continuation?.resume(throwing: NativeInstallError.invalidPayload("The downloaded archive is empty.")) }
         else { progress(1); continuation?.resume() }

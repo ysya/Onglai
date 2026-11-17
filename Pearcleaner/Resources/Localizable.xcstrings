@@ -1,6 +1,50 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The download server did not return an HTTP response." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載伺服器未傳回 HTTP 回應。"
+          }
+        }
+      }
+    },
+    "The download server returned an unsafe download URL." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載伺服器傳回了不安全的下載網址。"
+          }
+        }
+      }
+    },
+    "The download server returned HTTP %lld." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載伺服器傳回 HTTP %lld。"
+          }
+        }
+      }
+    },
+    "The download is too large (%lld bytes; limit %lld bytes)." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載檔案過大（%lld 位元組；上限 %lld 位元組）。"
+          }
+        }
+      }
+    },
     "Open App to use its updater or download the update from the publisher." : {
       "extractionState" : "manual",
       "localizations" : {

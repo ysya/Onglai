@@ -2,6 +2,58 @@ import XCTest
 @testable import Pearcleaner
 
 final class NativeArtifactDownloadTests: XCTestCase {
+    func testForbiddenDownloadUsesFallbackExactlyOnceAndKeepsTheSameURL() async throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("native-fallback-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NativeFixtureURLProtocol.self]
+        let calls = NativeFallbackCalls()
+        let url = URL(string: "https://fixture.invalid/403?release=exact")!
+        let download = NativeArtifactDownload(destination: destination, configuration: configuration, fallback: { requested, output, progress in
+            calls.record(requested)
+            try Data("fallback".utf8).write(to: output)
+            progress(1)
+        }, progress: { _ in })
+        try await download.fetch(url)
+        XCTAssertEqual(calls.urls, [url])
+        XCTAssertEqual(try Data(contentsOf: destination), Data("fallback".utf8))
+    }
+
+    func testFallbackIsNotUsedForOtherFailuresOrSuccessfulDownloads() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-no-fallback-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NativeFixtureURLProtocol.self]
+        let calls = NativeFallbackCalls()
+        for path in ["ok", "404", "429", "503", "oversize", "unsafe-response", "invalid-response"] {
+            let download = NativeArtifactDownload(destination: root.appendingPathComponent(path), configuration: configuration, fallback: { url, _, _ in
+                calls.record(url)
+                XCTFail("Fallback was triggered for \(url.lastPathComponent)")
+            }, progress: { _ in })
+            do { try await download.fetch(URL(string: "https://fixture.invalid/\(path)")!) }
+            catch { XCTAssertNotEqual(path, "ok") }
+        }
+        XCTAssertTrue(calls.urls.isEmpty)
+    }
+
+    func testCancellingWhileFallbackRunsCancelsItsTaskWithoutReportingSuccess() async throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("native-fallback-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NativeFixtureURLProtocol.self]
+        let started = expectation(description: "Fallback started")
+        let download = NativeArtifactDownload(destination: destination, configuration: configuration, fallback: { _, _, _ in
+            started.fulfill()
+            try await Task.sleep(nanoseconds: 30_000_000_000)
+            XCTFail("Cancelled fallback must not finish normally")
+        }, progress: { _ in })
+        let task = Task { try await download.fetch(URL(string: "https://fixture.invalid/403")!) }
+        await fulfillment(of: [started], timeout: 2)
+        download.cancel()
+        do { try await task.value; XCTFail("Cancelled fallback reported success") }
+        catch is CancellationError { }
+    }
     func testRejectsCredentialBearingAndNonHTTPSLocations() {
         for location in ["http://example.test/update.zip", "file:///tmp/update.zip", "https://example.test/update.zip#fragment"] {
             XCTAssertFalse(NativeArtifactDownload.isSafeURL(URL(string: location)!))
@@ -29,11 +81,11 @@ final class NativeArtifactDownloadTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [NativeFixtureURLProtocol.self]
         let file = root.appendingPathComponent("payload")
-        let download = NativeArtifactDownload(destination: file, configuration: configuration, progress: { _ in })
+        let download = NativeArtifactDownload(destination: file, configuration: configuration, fallback: nil, progress: { _ in })
         try await download.fetch(URL(string: "https://fixture.invalid/ok")!)
         XCTAssertEqual(try Data(contentsOf: file), Data("abc".utf8))
         for path in ["oversize", "forbidden"] {
-            let rejected = NativeArtifactDownload(destination: root.appendingPathComponent(path), configuration: configuration, progress: { _ in })
+            let rejected = NativeArtifactDownload(destination: root.appendingPathComponent(path), configuration: configuration, fallback: nil, progress: { _ in })
             do { try await rejected.fetch(URL(string: "https://fixture.invalid/\(path)")!); XCTFail("Response should be rejected") }
             catch NativeInstallError.invalidPayload { }
             catch { XCTFail("Permanent response or oversized payload must remain ineligible: \(error)") }
@@ -47,7 +99,7 @@ final class NativeArtifactDownloadTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [NativeFixtureURLProtocol.self]
         for statusCode in [408, 425, 429, 500, 502, 503, 504, 599] {
-            let download = NativeArtifactDownload(destination: root.appendingPathComponent("\(statusCode)"), configuration: configuration, progress: { _ in })
+            let download = NativeArtifactDownload(destination: root.appendingPathComponent("\(statusCode)"), configuration: configuration, fallback: nil, progress: { _ in })
             do {
                 try await download.fetch(URL(string: "https://fixture.invalid/\(statusCode)")!)
                 XCTFail("Temporary HTTP failure must be rejected")
@@ -57,6 +109,45 @@ final class NativeArtifactDownloadTests: XCTestCase {
                 XCTFail("Temporary HTTP failure must preserve retryability: \(error)")
             }
         }
+    }
+
+    func testPermanentHTTPFailureReportsItsStatusInsteadOfClaimingAnOversizedArchive() async throws {
+        for statusCode in [401, 403, 404, 406] {
+            let reason = try await rejectionReason(for: "\(statusCode)")
+            XCTAssertTrue(reason.contains("HTTP \(statusCode)"), reason)
+            XCTAssertFalse(reason.lowercased().contains("oversized"), reason)
+        }
+    }
+
+    func testOversizedResponseReportsTheActualLengthAndLimit() async throws {
+        let reason = try await rejectionReason(for: "oversize")
+        let digits = reason.filter(\.isNumber)
+        XCTAssertTrue(digits.contains("4294967297"), reason)
+        XCTAssertTrue(digits.contains(String(NativeArtifactDownload.maximumBytes)), reason)
+        XCTAssertFalse(reason.contains("HTTP"), reason)
+    }
+
+    func testNonHTTPResponseAndUnsafeResponseURLHaveDistinctReasons() async throws {
+        let invalidHTTP = try await rejectionReason(for: "invalid-response")
+        let unsafeURL = try await rejectionReason(for: "unsafe-response")
+        XCTAssertNotEqual(invalidHTTP, unsafeURL)
+        XCTAssertTrue(invalidHTTP.contains("HTTP"), invalidHTTP)
+        XCTAssertFalse(unsafeURL.lowercased().contains("oversized"), unsafeURL)
+    }
+
+    private func rejectionReason(for path: String) async throws -> String {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("native-response-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NativeFixtureURLProtocol.self]
+        let download = NativeArtifactDownload(destination: destination, configuration: configuration, fallback: nil, progress: { _ in })
+        do {
+            try await download.fetch(URL(string: "https://fixture.invalid/\(path)")!)
+            XCTFail("Invalid response must be rejected")
+        } catch NativeInstallError.invalidPayload(let reason) {
+            return reason
+        }
+        return ""
     }
 
     func testRedirectRebuildsRequestWithoutCredentials() {
@@ -93,13 +184,26 @@ final class NativeArtifactDownloadTests: XCTestCase {
     }
 }
 
+private final class NativeFallbackCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [URL] = []
+    var urls: [URL] { lock.withLock { recorded } }
+    func record(_ url: URL) { lock.withLock { recorded.append(url) } }
+}
+
 private final class NativeFixtureURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "fixture.invalid" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url!.lastPathComponent
         let statusCode = Int(path) ?? (path == "forbidden" ? 403 : 200)
-        let response = HTTPURLResponse(url: request.url!, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: ["Content-Length": path == "oversize" ? "4294967297" : "3"])!
+        let response: URLResponse
+        if path == "invalid-response" {
+            response = URLResponse(url: request.url!, mimeType: nil, expectedContentLength: 3, textEncodingName: nil)
+        } else {
+            let url = path == "unsafe-response" ? URL(string: "http://fixture.invalid/archive.zip")! : request.url!
+            response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: ["Content-Length": path == "oversize" ? "4294967297" : "3"])!
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("abc".utf8))
         client?.urlProtocolDidFinishLoading(self)
