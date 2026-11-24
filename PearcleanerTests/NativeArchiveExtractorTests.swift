@@ -3,6 +3,44 @@ import Darwin
 @testable import Pearcleaner
 
 final class NativeArchiveExtractorTests: XCTestCase {
+    func testDiskImageWithRootTIFFBackgroundSelectsTheApplication() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try Data([0x4d, 0x4d, 0x00, 0x2a]).write(to: root.appendingPathComponent(".background.tiff"))
+        try FileManager.default.createSymbolicLink(
+            atPath: root.appendingPathComponent("Applications").path, withDestinationPath: "/Applications"
+        )
+
+        let selected = try NativeArchiveExtractor.selectApplication(in: root, format: .dmg)
+        XCTAssertEqual(selected.resolvingSymlinksInPath().path, app.resolvingSymlinksInPath().path)
+
+        try Data("installer".utf8).write(to: root.appendingPathComponent("Installer.pkg"))
+        XCTAssertThrowsError(try NativeArchiveExtractor.selectApplication(in: root, format: .dmg))
+    }
+
+    func testArchivesRejectTIFFBackgroundOutsideTheDiskImageRootAndRejectInvalidHeaders() throws {
+        let tiff = Data([0x49, 0x49, 0x2a, 0x00])
+        let cases: [(format: NativeUpdateArtifact.Format, path: String, contents: Data)] = [
+            (.zip, ".background.tiff", tiff),
+            (.dmg, "resources/.background.tiff", tiff),
+            (.dmg, ".background.tiff", Data("not a TIFF".utf8))
+        ]
+        for test in cases {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("Fixture.app"), withIntermediateDirectories: true
+            )
+            let file = root.appendingPathComponent(test.path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try test.contents.write(to: file)
+
+            XCTAssertThrowsError(try NativeArchiveExtractor.selectApplication(in: root, format: test.format), test.path)
+        }
+    }
+
     func testSandboxedExtractionThroughAnAliasedWorkspacePreservesQuarantine() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-alias-zip-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)

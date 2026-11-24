@@ -17,7 +17,7 @@ enum NativeArchiveExtractor {
                 "ulimit -f \"$1\" || exit 1; shift; exec /usr/bin/ditto -x -k --rsrc --qtn \"$1\" \"$2\"", "native-extract",
                 String(NativeAppValidation.maximumFileBytes / 1024), archive.path, destination.path],
                 timeout: 300, monitor: { try checkExtractionBudget(destination) })
-            let app = try selectApplication(in: destination)
+            let app = try selectApplication(in: destination, format: format)
             try NativeAppValidation.validateTree(app)
             return app
         case .dmg:
@@ -28,7 +28,7 @@ enum NativeArchiveExtractor {
             do {
                 _ = try NativeSystemTool.run("/usr/bin/hdiutil", ["attach", "-readonly", "-nobrowse", "-noautoopen", "-owners", "off", "-mountpoint", mount.path, archive.path], timeout: 180, cancellable: false)
                 try Task.checkCancellation()
-                let app = try selectApplication(in: mount)
+                let app = try selectApplication(in: mount, format: format)
                 try NativeAppValidation.validateTree(app)
                 let copied = destination.appendingPathComponent(app.lastPathComponent)
                 try NativeBundleCopy.copy(app, to: copied)
@@ -117,22 +117,26 @@ enum NativeArchiveExtractor {
         }
     }
 
-    static func selectApplication(in root: URL) throws -> URL {
+    static func selectApplication(in root: URL, format: NativeUpdateArtifact.Format) throws -> URL {
         var apps: [URL] = []
         var count = 0
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey]
         func visit(_ directory: URL, depth: Int) throws {
             guard depth <= 4 else { throw NativeInstallError.invalidPayload("The archive has an unsupported directory layout.") }
-            for item in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) {
+            for item in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)) {
                 count += 1
                 guard count <= NativeAppValidation.maximumEntries else { throw invalidZIP() }
                 let name = item.lastPathComponent
-                let attributes = try item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                let attributes = try item.resourceValues(forKeys: keys)
                 if attributes.isSymbolicLink == true {
                     if name == "Applications", try FileManager.default.destinationOfSymbolicLink(atPath: item.path) == "/Applications" { continue }
                     throw NativeInstallError.invalidPayload("The archive has an unexpected top-level symbolic link.")
                 }
                 if item.pathExtension.lowercased() == "app", attributes.isDirectory == true { apps.append(item); continue }
                 if [".DS_Store", ".VolumeIcon.icns", ".background", "__MACOSX", ".fseventsd", ".Trashes"].contains(name) { continue }
+                // Some disk-image builders store Finder window artwork directly at the volume root.
+                if format == .dmg, depth == 0, name == ".background.tiff", attributes.isRegularFile == true,
+                   try hasTIFFHeader(item) { continue }
                 if attributes.isDirectory == true { try visit(item, depth: depth + 1); continue }
                 let lower = name.lowercased()
                 guard lower.hasPrefix("readme") || lower.hasPrefix("license") || lower.hasPrefix("licence") else {
@@ -143,6 +147,13 @@ enum NativeArchiveExtractor {
         try visit(root, depth: 0)
         guard apps.count == 1, let app = apps.first else { throw NativeInstallError.invalidPayload("The archive must contain exactly one application.") }
         return app
+    }
+
+    private static func hasTIFFHeader(_ url: URL) throws -> Bool {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        guard let header = try file.read(upToCount: 4) else { return false }
+        return header == Data([0x49, 0x49, 0x2a, 0x00]) || header == Data([0x4d, 0x4d, 0x00, 0x2a])
     }
 
     static func extractionProfile(for destination: URL) throws -> String {
