@@ -69,6 +69,18 @@ struct UpdateSettingsTab: View {
 
             Divider()
 
+            HStack {
+                Text("Update Channel")
+                Spacer()
+                Picker("Update Channel", selection: Binding(get: { updater.channel }, set: updater.selectChannel)) {
+                    Text("Stable").tag(OnglaiUpdateChannel.stable)
+                    Text("Beta").tag(OnglaiUpdateChannel.beta)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
             stateContent
 
             HStack(spacing: 10) {

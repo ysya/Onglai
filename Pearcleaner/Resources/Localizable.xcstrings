@@ -348,6 +348,28 @@
         }
       }
     },
+    "Update Channel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新頻道"
+          }
+        }
+      }
+    },
+    "Stable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "穩定版"
+          }
+        }
+      }
+    },
     "Move %lld selected items to Trash?" : {
       "extractionState" : "manual",
       "localizations" : {
