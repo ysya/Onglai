@@ -188,7 +188,8 @@ struct FileCategoryView: View {
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
-                .help(group.allSelected ? "Deselect all files in this category" : "Select all files in this category")
+                .disabled(!group.files.contains(where: appState.verifiedUninstallItems.contains))
+                .help(group.allSelected ? "Deselect all files in this category" : "Select verified files in this category")
 
                 // Category name
                 Text(group.category.rawValue)

@@ -348,6 +348,94 @@
         }
       }
     },
+    "Move %lld selected items to Trash?" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將選取的 %lld 個項目移到垃圾桶嗎？"
+          }
+        }
+      }
+    },
+    "Shared files and files with unverified ownership are kept." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共用檔案與無法確認歸屬的檔案會保留。"
+          }
+        }
+      }
+    },
+    "Kept because exclusive ownership could not be verified." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法確認此項目僅屬於這個應用程式，因此會保留。"
+          }
+        }
+      }
+    },
+    "Clean up the Homebrew record when the installed cask lists only this app and has no custom uninstall scripts." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "若 Homebrew cask 只包含這個應用程式，而且沒有自訂解除安裝腳本，就一併清理 Homebrew 紀錄。"
+          }
+        }
+      }
+    },
+    "Uninstall List Changed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解除安裝清單已變更"
+          }
+        }
+      }
+    },
+    "Review the refreshed list before moving files to Trash." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先確認重新掃描後的清單，再將檔案移到垃圾桶。"
+          }
+        }
+      }
+    },
+    "Could Not Uninstall" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法解除安裝"
+          }
+        }
+      }
+    },
+    "Check that the selected application is still at the same path and has quit, then try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請確認所選的應用程式仍在原路徑且已結束，再試一次。"
+          }
+        }
+      }
+    },
     "Move %lld selected items to Trash? This includes selected items hidden by the search filter." : {
       "extractionState" : "manual",
       "localizations" : {

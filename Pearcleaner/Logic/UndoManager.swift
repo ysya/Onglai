@@ -105,9 +105,31 @@ class FileManagerUndo {
         return deleteFilesWithResult(at: remaining, isCLI: isCLI, bundleName: bundleName).succeeded
     }
 
-    func deleteFilesWithResult(at urls: [URL], isCLI: Bool = false, bundleName: String? = nil) -> TrashResult {
+    static func uninstallMoveOrder(
+        _ eligible: [URL], requestedCount: Int, appBundle: URL
+    ) -> (urls: [URL], stopOnFailure: Bool) {
+        let bundlePath = appBundle.standardizedFileURL.path
+        let data = eligible.filter { $0.standardizedFileURL.path != bundlePath }
+        guard data.count + 1 == requestedCount,
+              let bundle = eligible.first(where: { $0.standardizedFileURL.path == bundlePath }) else {
+            return (data, false)
+        }
+        return (data + [bundle], true)
+    }
+
+    func deleteFilesWithResult(
+        at urls: [URL], isCLI: Bool = false, bundleName: String? = nil, appBundleToMoveLast: URL? = nil
+    ) -> TrashResult {
         // Filter out invalid/dangerous paths before deletion
-        let validURLs = urls.filter { validatePath($0.path) }
+        var validURLs = urls.filter { validatePath($0.path) }
+        var separator = " ; "
+        if let appBundleToMoveLast {
+            let order = Self.uninstallMoveOrder(
+                filterValidFiles(fileURLs: validURLs), requestedCount: urls.count, appBundle: appBundleToMoveLast
+            )
+            validURLs = order.urls
+            if order.stopOnFailure { separator = " && " }
+        }
 
         // If no valid paths remain, return early
         guard !validURLs.isEmpty else {
@@ -178,10 +200,10 @@ class FileManagerUndo {
             let source = shellQuoted(file.path)
             let destination = shellQuoted(destinationURL.path)
             return "/bin/mv \(source) \(destination)"
-        }.joined(separator: " ; ")
+        }.joined(separator: separator)
 
         // Combine folder creation and file moves
-        let finalCommands = "\(createFolderCommand) ; \(mvCommands)"
+        let finalCommands = "\(createFolderCommand)\(separator)\(mvCommands)"
         _ = executeFileCommands(finalCommands, requiresPrivileges: requiresPrivileges)
         let result = TrashResult.confirmed(requested: urls, filePairs: tempFilePairs)
         let filePairs = tempFilePairs.filter { result.moved.contains($0.originalURL) }

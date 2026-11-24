@@ -48,7 +48,7 @@ struct PearCLI: ParsableCommand {
     struct List: ParsableCommand {
         static var configuration = CommandConfiguration(
             commandName: "list",
-            abstract: "List application files available for uninstall at the specified path"
+            abstract: "List verified uninstall paths for the specified application"
         )
 
         @Argument(help: "Path to the application")
@@ -76,6 +76,9 @@ struct PearCLI: ParsableCommand {
             }
 
             printOS("\nFound \(foundPaths.count) application files.\n")
+            for unreadable in appPathFinder.unreadableUninstallPaths {
+                printOS("Could not inspect \(unreadable)\n")
+            }
             Foundation.exit(0)
         }
     }
@@ -119,7 +122,7 @@ struct PearCLI: ParsableCommand {
         @Argument(help: "Path to the application")
         var path: String
 
-        func run() async throws {
+        func run() throws {
             // Convert the provided string path to a URL
             let url = URL(fileURLWithPath: path)
 
@@ -129,10 +132,14 @@ struct PearCLI: ParsableCommand {
                 Foundation.exit(1)
             }
 
-            // Kill app before deletion
-            await killApp(appId: appInfo.bundleIdentifier)
+            let bundle = appInfo.uninstallBundleURL.standardizedFileURL
+            guard !DeletionSafetyPolicy.isInTrash(bundle), DeletionSafetyPolicy.isUnaliased(bundle),
+                  quitAppForUninstall(appInfo) else {
+                printOS("Could not verify or quit the application at \(bundle.path).\n")
+                throw ExitCode.failure
+            }
 
-            let success = moveFilesToTrashCLI(at: [appInfo.path])
+            let success = moveFilesToTrashCLI(at: [bundle])
 
             if success {
                 printOS("Application deleted successfully.\n")
@@ -147,13 +154,13 @@ struct PearCLI: ParsableCommand {
     struct UninstallAll: ParsableCommand {
         static var configuration = CommandConfiguration(
             commandName: "uninstall-all",
-            abstract: "Uninstall application bundle and ALL related files at the specified path"
+            abstract: "Move the application and its verified files to Trash"
         )
 
         @Argument(help: "Path to the application")
         var path: String
 
-        func run() async throws {
+        func run() throws {
             // Convert the provided string path to a URL
             let url = URL(fileURLWithPath: path)
 
@@ -163,21 +170,27 @@ struct PearCLI: ParsableCommand {
                 Foundation.exit(1)
             }
 
-            // Use the AppPathFinder to find paths synchronously
+            guard quitAppForUninstall(appInfo) else {
+                printOS("Quit the application before uninstalling it.\n")
+                throw ExitCode.failure
+            }
             let appPathFinder = AppPathFinder(appInfo: appInfo, locations: PearCLI.locations)
-
-            // Call findPaths to get the Set of URLs
             let foundPaths = appPathFinder.findPathsCLI()
+            let unreadable = appPathFinder.unreadableUninstallPaths
+            guard unreadable.isEmpty else {
+                printOS("The uninstall scan is incomplete. Could not inspect:\n")
+                for path in unreadable { printOS("\(path)\n") }
+                throw ExitCode.failure
+            }
 
             // Check if any file is protected (non-writable)
             let protectedFiles = foundPaths.filter {
-                !FileManager.default.isWritableFile(atPath: $0.path)
+                !FileManager.default.isWritableFile(atPath: $0.deletingLastPathComponent().path)
             }
 
             // If protected files are found, echo message and exit
             if !protectedFiles.isEmpty && !HelperToolManager.shared.isHelperToolInstalled {
-                printOS("Protected files detected. Please run this command with sudo:\n")
-                printOS("sudo pearcleaner uninstall-all \(path)")
+                printOS("Some files require the Onglai privileged helper.\n")
                 printOS("\nProtected files:\n")
                 for file in protectedFiles {
                     printOS(file.path)
@@ -185,16 +198,16 @@ struct PearCLI: ParsableCommand {
                 Foundation.exit(1)
             }
 
-            // Kill app before deletion
-            await killApp(appId: appInfo.bundleIdentifier)
+            let result = FileManagerUndo.shared.deleteFilesWithResult(
+                at: Array(foundPaths), isCLI: true, appBundleToMoveLast: appInfo.uninstallBundleURL
+            )
 
-            let success = moveFilesToTrashCLI(at: Array(foundPaths))
-
-            if success {
-                printOS("The application and related files have been deleted successfully.\n")
+            if result.succeeded {
+                printOS("Moved \(result.moved.count) verified items to Trash.\n")
                 Foundation.exit(0)
             } else {
                 printOS("Failed to delete some files, they might be protected or in use.\n")
+                for file in result.failed { printOS("\(file.path)\n") }
                 Foundation.exit(1)
             }
         }

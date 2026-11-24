@@ -53,14 +53,17 @@ struct FileListView: View {
         nonmutating set { appState.selectedItems = newValue }
     }
     private var selection: FileSelectionSummary {
-        FileSelectionSummary(selected: appState.selectedItems, visible: filteredFiles)
+        FileSelectionSummary(
+            selected: appState.selectedItems,
+            visible: filteredFiles.filter { appState.verifiedUninstallItems.contains($0) }
+        )
     }
     @State private var memoizedFiles: [URL] = []
     @State private var lastRefreshDate: Date?
     @State private var collapsedCategories: Set<FileCategory> = []
     let locations: Locations
     let windowController: WindowManager
-    let handleUninstallAction: () -> Void
+    let handleUninstallAction: (Bool) -> Void
     let displaySizeTotal: String
     let totalSelectedSize: String
     let updateSortedFiles: () -> Void
@@ -94,15 +97,16 @@ struct FileListView: View {
                 sum + (appState.appInfo.fileSize[url] ?? 0)
             }
 
-            let selectedCount = files.filter { selectedFileItemsLocal.contains($0) }.count
+            let selectable = files.filter { appState.verifiedUninstallItems.contains($0) }
+            let selectedCount = selectable.filter { selectedFileItemsLocal.contains($0) }.count
 
             return GroupedFiles(
                 category: category,
                 files: files,
                 totalSize: totalSize,
                 isExpanded: !collapsedCategories.contains(category),
-                allSelected: selectedCount == files.count && files.count > 0,
-                someSelected: selectedCount > 0 && selectedCount < files.count
+                allSelected: selectedCount == selectable.count && !selectable.isEmpty,
+                someSelected: selectedCount > 0 && selectedCount < selectable.count
             )
         }
         .sorted { $0.category.sortOrder < $1.category.sortOrder }
@@ -161,7 +165,7 @@ struct FileListView: View {
 
                     // Stats header
                     HStack {
-                        Text("\(selection.visibleSelectedCount) of \(filteredFiles.count) visible items selected")
+                        Text("\(selection.visibleSelectedCount) of \(selection.visible.count) visible items selected")
                             .font(.caption)
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
 
@@ -177,6 +181,13 @@ struct FileListView: View {
                         }
                     }
                     .padding(.vertical)
+
+                    if memoizedFiles.contains(where: { !appState.verifiedUninstallItems.contains($0) }) {
+                        Text("Shared files and files with unverified ownership are kept.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 5)
+                    }
 
                     if selection.hiddenSelectedCount > 0 {
                         HStack {
@@ -297,7 +308,7 @@ struct FileListView: View {
                                 Button(selection.allVisibleSelected ? String(localized: "Deselect Results") : String(localized: "Select Results")) {
                                     appState.selectedItems = selection.togglingVisibleSelection()
                                 }
-                                .disabled(filteredFiles.isEmpty)
+                                .disabled(selection.visible.isEmpty)
                                 .buttonStyle(ControlGroupButtonStyle(
                                     foregroundColor: ThemeColors.shared(for: colorScheme).accent,
                                     shape: Capsule(style: .continuous),
@@ -308,7 +319,7 @@ struct FileListView: View {
                                 Divider().frame(height: 10)
 
                                 Button {
-                                    handleUninstallAction()
+                                    handleUninstallAction(selection.hiddenSelectedCount > 0)
                                 } label: {
                                     Label {
                                         Text("Trash \(selectedFileItemsLocal.count) Items (\(totalSelectedSize))")
@@ -373,7 +384,7 @@ struct FileListView: View {
             },
             set: { isSelected in
                 if isSelected {
-                    if filteredFiles.contains(file) {
+                    if selection.visible.contains(file) {
                         selectedFileItemsLocal.insert(file)
                     }
                 } else {
@@ -396,20 +407,12 @@ struct FileListView: View {
 
     // Helper function to toggle category selection
     private func toggleCategorySelection(_ group: GroupedFiles) {
+        let selectable = Set(group.files).intersection(selection.visible)
         if group.allSelected {
-            // Deselect all files in this category
-            for file in group.files {
-                selectedFileItemsLocal.remove(file)
-            }
+            selectedFileItemsLocal.subtract(selectable)
         } else {
-            // Select all files in this category (that are in filteredFiles)
-            let filesToSelect = group.files.filter { filteredFiles.contains($0) }
-            for file in filesToSelect {
-                selectedFileItemsLocal.insert(file)
-            }
+            selectedFileItemsLocal.formUnion(selectable)
         }
-        // Sync with appState
-        appState.selectedItems = selectedFileItemsLocal
     }
 
     // Helper function to update memoized files

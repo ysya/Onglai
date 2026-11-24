@@ -18,17 +18,50 @@ class HomebrewUninstaller {
 
     private init() {}
 
+    /// Name-based cask lookup is useful for the UI but insufficient to run an uninstall.
+    func hasSimpleReceipt(for name: String, appBundle: URL) -> Bool {
+        guard let token = name.split(separator: "/").last,
+              token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_@+.".contains($0)) }),
+              token != ".", token != ".." else { return false }
+        let metadata = URL(fileURLWithPath: "\(brewPrefix)/Caskroom/\(token)/.metadata")
+        func read(_ filename: String) -> [String: Any]? {
+            guard let data = try? Data(contentsOf: metadata.appendingPathComponent(filename)) else { return nil }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        }
+        guard let receipt = read("INSTALL_RECEIPT.json"), let config = read("config.json") else { return false }
+        return Self.simpleReceiptMatches(receipt, config: config, appBundle: appBundle)
+    }
+
+    static func simpleReceiptMatches(_ receipt: [String: Any], config: [String: Any], appBundle: URL) -> Bool {
+        guard receipt["uninstall_flight_blocks"] as? Bool == false,
+              let artifacts = receipt["uninstall_artifacts"] as? [[String: Any]],
+              artifacts.allSatisfy({ $0.count == 1 && ($0["app"] != nil || $0["zap"] != nil) }) else { return false }
+        let appArtifacts = artifacts.compactMap { $0["app"] as? [Any] }
+        guard appArtifacts.count == 1, let args = appArtifacts.first,
+              let source = args.first as? String, (1...2).contains(args.count) else { return false }
+        var target = (source as NSString).lastPathComponent
+        if args.count == 2 {
+            guard let options = args[1] as? [String: String], let renamed = options["target"] else { return false }
+            target = renamed
+        }
+        let appDirectory = ["explicit", "env", "default"].compactMap {
+            (config[$0] as? [String: Any])?["appdir"] as? String
+        }.first
+        guard let appDirectory, appDirectory.hasPrefix("/"), !target.isEmpty, !target.hasPrefix("~") else { return false }
+        let path = target.hasPrefix("/") ? target : (appDirectory as NSString).appendingPathComponent(target)
+        return URL(fileURLWithPath: path).standardizedFileURL.path == appBundle.standardizedFileURL.path
+    }
+
     // MARK: - Main Entry Point
 
-    /// Uninstalls a Homebrew package directly without calling brew uninstall
-    /// This replicates Homebrew's uninstall behavior using privileged helper for root operations
+    /// Uninstalls a Homebrew package, optionally including the cask's zap directives.
     func uninstallPackage(name: String, cask: Bool, zap: Bool = true) async throws {
         UpdaterDebugLogger.shared.log(.homebrew, "🗑️ Starting uninstall for \(name) (type: \(cask ? "cask" : "formula"), zap: \(zap))")
 
         do {
             if useBrewUninstallZap {
                 // Use native brew uninstall command
-                try await uninstallViaBrewCommand(name: name, cask: cask)
+                try await uninstallViaBrewCommand(name: name, cask: cask, zap: zap)
             } else {
                 // Use manual uninstall method
                 if cask {
@@ -63,9 +96,10 @@ class HomebrewUninstaller {
 
             UpdaterDebugLogger.shared.log(.homebrew, "✓ Uninstalled \(name) successfully")
 
-            // Run brew cleanup synchronously (FilesView manages the progress indicator)
-            UpdaterDebugLogger.shared.log(.homebrew, "  Running cleanup...")
-            _ = try? await HomebrewController.shared.runCleanup()
+            if !cask || zap {
+                UpdaterDebugLogger.shared.log(.homebrew, "  Running cleanup...")
+                _ = try? await HomebrewController.shared.runCleanup()
+            }
         } catch {
             UpdaterDebugLogger.shared.log(.homebrew, "❌ Uninstall failed for \(name): \(error.localizedDescription)")
             throw error
@@ -75,13 +109,13 @@ class HomebrewUninstaller {
     // MARK: - Brew Command Method
 
     /// Uninstalls a package using native brew uninstall command
-    private func uninstallViaBrewCommand(name: String, cask: Bool) async throws {
+    private func uninstallViaBrewCommand(name: String, cask: Bool, zap: Bool) async throws {
         var arguments = ["uninstall"]
 
         // Add package type flag
         if cask {
             arguments.append("--cask")
-            arguments.append("--zap")
+            if zap { arguments.append("--zap") }
         } else {
             arguments.append("--formula")
         }

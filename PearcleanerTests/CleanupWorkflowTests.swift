@@ -2,6 +2,174 @@ import XCTest
 @testable import Pearcleaner
 
 final class CleanupWorkflowTests: XCTestCase {
+    func testUninstallFindsExactAppDataByHostAndContainers() throws {
+        let manager = FileManager.default
+        let library = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? manager.removeItem(at: library) }
+        let identifier = "com.example.Example"
+        let uuid = UUID().uuidString
+        let support = library.appendingPathComponent("Application Support/\(identifier)")
+        let scripts = library.appendingPathComponent("Application Scripts/\(identifier)")
+        let preferences = library.appendingPathComponent("Preferences/ByHost/\(identifier).\(uuid).plist")
+        let container = library.appendingPathComponent("Containers/\(uuid)")
+        let conflictingContainer = library.appendingPathComponent("Containers/\(identifier)")
+        let misleadingPaths = [
+            library.appendingPathComponent("Application Support/Example"),
+            library.appendingPathComponent("Application Support/\(identifier)Beta"),
+            library.appendingPathComponent("Group Containers/\(identifier)"),
+            library.appendingPathComponent("Receipts/\(identifier)")
+        ]
+        for directory in [support, scripts, preferences.deletingLastPathComponent(), container, conflictingContainer] + misleadingPaths {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data().write(to: preferences)
+        try Data().write(to: preferences.deletingLastPathComponent().appendingPathComponent("\(identifier).Beta.plist"))
+        for (path, owner) in [(container, identifier), (conflictingContainer, "com.example.Other")] {
+            let metadata = try PropertyListSerialization.data(
+                fromPropertyList: ["MCMMetadataIdentifier": owner], format: .binary, options: 0
+            )
+            try metadata.write(to: path.appendingPathComponent(".com.apple.containermanagerd.metadata.plist"))
+        }
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: identifier, userLibrary: library, localLibrary: nil
+        ) { _, _ in XCTFail("The fixture is readable") }
+
+        XCTAssertEqual(Set(found.map(\.path)), Set([support, scripts, preferences, container].map(\.path)))
+    }
+
+    func testUninstallDiscoversOnlyDeclaredEmbeddedExtensionContainers() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? manager.removeItem(at: root) }
+        let library = root.appendingPathComponent("Library")
+        let app = root.appendingPathComponent("Example.app")
+        let owner = "com.example.Example"
+
+        func createPlist(_ values: [String: Any], at file: URL) throws {
+            try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
+            try data.write(to: file)
+        }
+
+        let extensionID = owner + ".Share"
+        try createPlist(
+            ["CFBundleIdentifier": extensionID, "NSExtension": ["NSExtensionPointIdentifier": "com.apple.share-services"]],
+            at: app.appendingPathComponent("Contents/PlugIns/Share.appex/Contents/Info.plist")
+        )
+        let foreignID = "com.another.App.Share"
+        try createPlist(
+            ["CFBundleIdentifier": foreignID, "NSExtension": ["NSExtensionPointIdentifier": "com.apple.share-services"]],
+            at: app.appendingPathComponent("Contents/PlugIns/Foreign.appex/Contents/Info.plist")
+        )
+        let undeclaredID = owner + ".Other"
+        let containers = library.appendingPathComponent("Containers")
+        for identifier in [extensionID, foreignID, undeclaredID] {
+            let container = containers.appendingPathComponent(identifier)
+            try createPlist(["MCMMetadataIdentifier": identifier],
+                            at: container.appendingPathComponent(".com.apple.containermanagerd.metadata.plist"))
+        }
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: owner, userLibrary: library, localLibrary: nil, appBundle: app
+        ) { _, path in XCTFail("Unexpected read error at \(path)") }
+
+        XCTAssertEqual(found.map(\.path), [containers.appendingPathComponent(extensionID).path])
+    }
+
+    func testUninstallDoesNotClaimVendorDataForAnUnsignedBundle() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? manager.removeItem(at: root) }
+        let library = root.appendingPathComponent("Library")
+        let app = root.appendingPathComponent("Visual Studio Code.app")
+        let info = app.appendingPathComponent("Contents/Info.plist")
+        let paths = [info.deletingLastPathComponent(), library.appendingPathComponent("Application Support/Code"),
+                     root.appendingPathComponent(".vscode"), root.appendingPathComponent(".vscode-shared")]
+        for path in paths {
+            try manager.createDirectory(at: path, withIntermediateDirectories: true)
+        }
+        let identifier = "com.microsoft.VSCode"
+        let data = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": identifier], format: .binary, options: 0)
+        try data.write(to: info)
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: identifier, userLibrary: library, localLibrary: nil, appBundle: app
+        ) { _, path in XCTFail("Unexpected read error at \(path)") }
+
+        XCTAssertTrue(found.isEmpty)
+    }
+
+    func testUninstallMovesTheAppAfterAllSelectedData() {
+        let app = URL(fileURLWithPath: "/Applications/Example.app")
+        let cache = URL(fileURLWithPath: "/tmp/example-cache")
+        let preferences = URL(fileURLWithPath: "/tmp/example-preferences")
+
+        let complete = FileManagerUndo.uninstallMoveOrder([app, cache, preferences], requestedCount: 3, appBundle: app)
+        XCTAssertEqual(complete.urls, [cache, preferences, app])
+        XCTAssertTrue(complete.stopOnFailure)
+
+        let missing = FileManagerUndo.uninstallMoveOrder([app, cache], requestedCount: 3, appBundle: app)
+        XCTAssertEqual(missing.urls, [cache])
+        XCTAssertFalse(missing.stopOnFailure)
+    }
+
+    func testUninstallKeepsVerifiedChildrenAndSkipsTrash() {
+        let parent = URL(fileURLWithPath: "/Applications/Vendor")
+        let app = parent.appendingPathComponent("Example.app")
+        let resource = app.appendingPathComponent("Contents/Resources")
+        let trashedCopy = URL(fileURLWithPath: "/Volumes/External/.Trashes/501/Example.app")
+        let appData = URL(fileURLWithPath: "/tmp/data")
+        let similarlyNamedData = URL(fileURLWithPath: "/tmp/data-backup")
+        let nestedData = appData.appendingPathComponent("nested")
+
+        let candidates = DeletionSafetyPolicy.uninstallCandidates(
+            [parent, app, resource, app, trashedCopy, nestedData, similarlyNamedData, appData],
+            appBundle: app,
+            ownedFiles: [nestedData]
+        )
+
+        XCTAssertEqual(Set(candidates), [app, similarlyNamedData, nestedData])
+        XCTAssertEqual(candidates.count, 3)
+    }
+
+    func testUninstallDoesNotFollowASymlinkToSharedData() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let caches = root.appendingPathComponent("Library/Caches")
+        let shared = root.appendingPathComponent("Shared")
+        try manager.createDirectory(at: caches, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        try manager.createDirectory(at: shared, withIntermediateDirectories: true)
+        let symlink = caches.appendingPathComponent("com.example.Example")
+        try manager.createSymbolicLink(at: symlink, withDestinationURL: shared)
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: "com.example.Example", userLibrary: caches.deletingLastPathComponent(), localLibrary: nil
+        ) { _, _ in XCTFail("The fixture is readable") }
+
+        XCTAssertTrue(found.isEmpty)
+    }
+
+    func testAutomaticCaskCleanupRequiresAnExactSingleAppReceipt() {
+        let receipt: [String: Any] = [
+            "uninstall_flight_blocks": false,
+            "uninstall_artifacts": [["app": ["Example.app"]], ["zap": ["trash": ["~/Library/Shared"]]]]
+        ]
+        let config = ["default": ["appdir": "/Applications"], "explicit": ["appdir": "/Install.Apps"]]
+        let app = URL(fileURLWithPath: "/Install.Apps/Example.app")
+
+        XCTAssertTrue(HomebrewUninstaller.simpleReceiptMatches(receipt, config: config, appBundle: app))
+        XCTAssertFalse(HomebrewUninstaller.simpleReceiptMatches(
+            receipt, config: config, appBundle: URL(fileURLWithPath: "/Applications/Example.app")
+        ))
+        var complexReceipt = receipt
+        complexReceipt["uninstall_artifacts"] = [["app": ["Example.app"]], ["app": ["Other.app"]]]
+        XCTAssertFalse(HomebrewUninstaller.simpleReceiptMatches(complexReceipt, config: config, appBundle: app))
+        complexReceipt["uninstall_artifacts"] = [["app": ["Example.app"]], ["uninstall": ["script": "cleanup"]]]
+        XCTAssertFalse(HomebrewUninstaller.simpleReceiptMatches(complexReceipt, config: config, appBundle: app))
+    }
+
     func testUnreadableOriginalLocationCannotBeConfirmedAsRemoved() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)

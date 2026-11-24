@@ -27,7 +27,7 @@ class AppPathFinder {
     // Shared properties
     private var appInfo: AppInfo
     private var locations: Locations
-    private var containerCollection: [URL] = []
+    private var ownedFiles = Set<URL>()
     private let collectionAccessQueue = DispatchQueue(label: "me.ysya.Onglai.appPathFinder.collectionAccess")
     @AppStorage("settings.general.searchSensitivity") private var sensitivityLevel: SearchSensitivityLevel = .strict
     @AppStorage("settings.general.searchTextContent") private var searchTextContent: Bool = false
@@ -57,24 +57,12 @@ class AppPathFinder {
     }
 
     private func recordReadFailure(_ error: Error, at path: String) {
-        let error = error as NSError
-        // Absent optional app-data locations are normal, not incomplete coverage.
-        if error.domain == NSCocoaErrorDomain,
-           [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) { return }
-        if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOENT) { return }
+        guard !DeletionSafetyPolicy.isMissingFileError(error) else { return }
         collectionAccessQueue.sync { _ = unreadablePaths.insert(path) }
     }
 
     // Use a Set for fast membership testing
     private var collectionSet: Set<URL> = []
-
-    // Precompiled UUID regex
-    private static let uuidRegex: NSRegularExpression = {
-        return try! NSRegularExpression(
-            pattern: "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
-            options: .caseInsensitive
-        )
-    }()
 
     // Change from lazy var to regular property initialized in init
     private let cachedIdentifiers: (formattedBundleId: String, bundleLastTwoComponents: String, formattedAppName: String, formattedAppNameStripped: String?, appNameLettersOnly: String, pathComponentName: String, useBundleIdentifier: Bool, formattedCompanyName: String?, formattedEntitlements: [String], formattedTeamIdentifier: String?, formattedBaseBundleId: String?)
@@ -157,56 +145,38 @@ class AppPathFinder {
         self.cachedIdentifiers = (formattedBundleId, bundleLastTwoComponents, formattedAppName, formattedAppNameStripped, appNameLettersOnly, pathComponentName, useBundleIdentifier, formattedCompanyName, formattedEntitlements, formattedTeamIdentifier, formattedBaseBundleId)
     }
 
-    // Process the initial URL
-    private func initialURLProcessing() {
-        if let url = URL(string: self.appInfo.path.absoluteString), !url.path.contains(".Trash") {
-            let modifiedUrl = url.path.contains("Wrapper") ? url.deletingLastPathComponent().deletingLastPathComponent() : url
-            collectionSet.insert(modifiedUrl)
+    /// Uses Launch Services to protect identifier-scoped data still used by another copy.
+    private func verifiedUninstallFiles() -> Set<URL> {
+        let bundle = appInfo.uninstallBundleURL.standardizedFileURL
+        guard !DeletionSafetyPolicy.isSystemApp(bundle), DeletionSafetyPolicy.isUnaliased(bundle) else { return [] }
+        let bundlePath = bundle.path
+        let identifier = appInfo.bundleIdentifier
+        var verified = Set<URL>()
+        if !DeletionSafetyPolicy.isInTrash(bundle), fileSystemItemMayExist(at: bundle) {
+            verified.insert(bundle)
         }
+        guard !identifier.isEmpty, identifier != "-" else { return verified }
+
+        let copies = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: identifier)
+        let hasOtherCopy = copies.contains { copy in
+            let copyPath = copy.resolvingSymlinksInPath().standardizedFileURL.path
+            return !DeletionSafetyPolicy.isInTrash(copy) && copyPath != bundlePath
+                && !copyPath.hasPrefix(bundlePath + "/") && fileSystemItemMayExist(at: copy)
+        }
+        if !hasOtherCopy {
+            verified.formUnion(DeletionSafetyPolicy.ownedLibraryFiles(
+                bundleIdentifier: identifier,
+                userLibrary: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library"),
+                localLibrary: URL(fileURLWithPath: "/Library"),
+                appBundle: appInfo.path,
+                onReadError: recordReadFailure
+            ))
+        }
+        return verified
     }
 
-    // Get all container URLs
-    private func getAllContainers(bundleURL: URL) -> [URL] {
-        var containers: [URL] = []
-        let bundleIdentifier = Bundle(url: bundleURL)?.bundleIdentifier
-
-        guard let containerBundleIdentifier = bundleIdentifier else {
-            return containers
-        }
-
-        if let groupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: containerBundleIdentifier) {
-            if FileManager.default.fileExists(atPath: groupContainer.path) {
-                containers.append(groupContainer)
-                Task { @MainActor in
-                    GlobalConsoleManager.shared.appendOutput("Found group container: \(groupContainer.lastPathComponent)\n", source: CurrentPage.applications.title)
-                }
-            }
-        }
-
-        if let containersPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?.appendingPathComponent("Containers") {
-            do {
-                let containerDirectories = try FileManager.default.contentsOfDirectory(at: containersPath, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-                for directory in containerDirectories {
-                    let directoryName = directory.lastPathComponent
-                    if AppPathFinder.uuidRegex.firstMatch(in: directoryName, options: [], range: NSRange(location: 0, length: directoryName.utf16.count)) != nil {
-                        let metadataPlistURL = directory.appending(path: ".com.apple.containermanagerd.metadata.plist", directoryHint: .notDirectory)
-                        if let metadataDict = NSDictionary(contentsOf: metadataPlistURL),
-                           let applicationBundleID = metadataDict["MCMMetadataIdentifier"] as? String {
-                            if applicationBundleID == self.appInfo.bundleIdentifier {
-                                containers.append(directory)
-                                Task { @MainActor in
-                                    GlobalConsoleManager.shared.appendOutput("Found app container: \(directoryName)\n", source: CurrentPage.applications.title)
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {
-                recordReadFailure(error, at: containersPath.path)
-                printOS("Error accessing Containers directory: \(error)")
-            }
-        }
-        return containers
+    var unreadableUninstallPaths: [String] {
+        collectionAccessQueue.sync { unreadablePaths.sorted() }
     }
 
     // Combined processing for directories and files
@@ -243,26 +213,8 @@ class AppPathFinder {
                     if shouldSkipItem(normalizedItemName, at: scannedItemURL) { continue }
 
                     if specificCondition(normalizedItemName: normalizedItemName, scannedItemURL: scannedItemURL) {
-                        // Determine what to add: matched item or its parent (for vendor folders)
-                        let itemToAdd: URL
-
-                        // For depth=2 matches in Library root searches, check if parent is a vendor folder
-                        if isLibraryRootSearch && currentDepth == 2 {
-                            let parentURL = scannedItemURL.deletingLastPathComponent()
-                            let parentName = parentURL.lastPathComponent
-
-                            // Add parent directory if it's NOT a standard macOS directory
-                            // This captures vendor folders like /Library/Objective-See/ instead of /Library/Objective-See/LuLu/
-                            if !Locations.standardLibrarySubdirectories.contains(parentName) {
-                                itemToAdd = parentURL
-                            } else {
-                                itemToAdd = scannedItemURL
-                            }
-                        } else {
-                            itemToAdd = scannedItemURL
-                        }
-
-                        localResults.append(itemToAdd)
+                        // A matching child does not establish ownership of its parent.
+                        localResults.append(scannedItemURL)
                     }
 
                     // If this is a directory and we haven't reached max depth, mark for recursive search
@@ -314,16 +266,6 @@ class AppPathFinder {
             }
         }
         dispatchGroup.wait()
-    }
-
-    // Synchronous collection for CLI usage
-    private func collectLocationsCLI() {
-        for location in self.locations.apps.paths {
-            // Use depth=2 for Library directories to find files in vendor subdirectories
-            let isLibRoot = isLibraryDirectory(location)
-            let maxDepth = isLibRoot ? 2 : 1
-            processLocation(location, currentDepth: 0, maxDepth: maxDepth, isLibraryRootSearch: isLibRoot)
-        }
     }
 
     // Helper to determine if a location is a Library directory
@@ -674,8 +616,6 @@ class AppPathFinder {
     private func finalizeCollection() {
         DispatchQueue.global(qos: .userInitiated).async {
             guard !self.shouldStop else { return }
-            let outliers = self.handleOutliers()
-            let outliersEx = self.handleOutliers(include: false)
             var tempCollection: [URL] = []
             self.collectionAccessQueue.sync {
                 tempCollection = Array(self.collectionSet)
@@ -685,8 +625,8 @@ class AppPathFinder {
                 GlobalConsoleManager.shared.appendOutput("Found \(tempCollection.count) files from manual search\n", source: CurrentPage.applications.title)
             }
 
-            tempCollection.append(contentsOf: self.containerCollection)
-            tempCollection.append(contentsOf: outliers)
+            tempCollection.append(contentsOf: self.ownedFiles)
+            tempCollection.append(contentsOf: self.handleOutliers())
 
             // Insert spotlight results before sorting and filtering
             Task { @MainActor in
@@ -704,42 +644,8 @@ class AppPathFinder {
 
             tempCollection.append(contentsOf: spotlightOnly)
 
-            let excludePaths = outliersEx.map { $0.standardizedFileURL.path }
-            tempCollection.removeAll { url in
-                let path = url.standardizedFileURL.path
-                return excludePaths.contains { excludedPath in
-                    path == excludedPath || path.hasPrefix(excludedPath + "/")
-                }
-            }
-
-            // Apply app exclusion filter to ALL discovered files (from all code paths)
-            tempCollection.removeAll { fileURL in
-                let normalizedPath = fileURL.standardizedFileURL.path.pearFormat()
-                return self.formattedAppExclusionList.contains(normalizedPath) ||
-                self.formattedAppExclusionList.contains(where: { normalizedPath.contains($0) })
-            }
-
-            // Deletion safety net: never offer protected roots or user-content
-            // paths, regardless of which search surfaced them
-            tempCollection.removeAll {
-                self.locations.isProtectedFromDeletion(
-                    $0,
-                    targetBundleIdentifier: self.appInfo.bundleIdentifier,
-                    entitlementIdentifiers: self.appInfo.entitlements ?? []
-                )
-            }
-
-            let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
-            var filteredCollection: [URL] = []
-            for url in sortedCollection {
-                // Remove any existing child paths of the current URL
-                filteredCollection.removeAll { $0.path.hasPrefix(url.path + "/") }
-
-                // Only add if it's not already a subpath of an existing item
-                if !filteredCollection.contains(where: { url.path.hasPrefix($0.path + "/") }) {
-                    filteredCollection.append(url)
-                }
-            }
+            tempCollection.append(contentsOf: self.fetchAssociatedZombieFiles())
+            let filteredCollection = self.filterCollection(tempCollection)
 
             Task { @MainActor in
                 GlobalConsoleManager.shared.appendOutput("Calculating file sizes for \(filteredCollection.count) items...\n", source: CurrentPage.applications.title)
@@ -749,61 +655,24 @@ class AppPathFinder {
         }
     }
 
-    // Finalize the collection for CLI usage
-    private func finalizeCollectionCLI() -> Set<URL> {
-        let outliers = handleOutliers()
-        let outliersEx = handleOutliers(include: false)
-        var tempCollection: [URL] = []
-        self.collectionAccessQueue.sync {
-            tempCollection = Array(self.collectionSet)
-        }
-        tempCollection.append(contentsOf: self.containerCollection)
-        tempCollection.append(contentsOf: outliers)
-        // Insert spotlight results before sorting and filtering
-        let spotlightResults = self.spotlightSupplementalPaths()
-        let spotlightOnly = spotlightResults.filter { !self.collectionSet.contains($0) }
-        //        printOS("Spotlight index found: \(spotlightOnly.count)")
-        tempCollection.append(contentsOf: spotlightOnly)
-
-        let excludePaths = outliersEx.map { $0.standardizedFileURL.path }
-        tempCollection.removeAll { url in
+    private func filterCollection(_ candidates: [URL]) -> [URL] {
+        let excludedPaths = handleOutliers(include: false).map { $0.standardizedFileURL.path }
+        let userExclusions = formattedAppExclusionList
+        let eligible = candidates.filter { url in
             let path = url.standardizedFileURL.path
-            return excludePaths.contains { excludedPath in
-                path == excludedPath || path.hasPrefix(excludedPath + "/")
-            }
+            let formatted = path.pearFormat()
+            return !excludedPaths.contains { path == $0 || path.hasPrefix($0 + "/") }
+                && !userExclusions.contains(where: { formatted.contains($0) })
+                && !locations.isProtectedFromDeletion(
+                    url,
+                    targetBundleIdentifier: appInfo.bundleIdentifier,
+                    entitlementIdentifiers: appInfo.entitlements ?? []
+                )
         }
 
-        // Apply app exclusion filter to ALL discovered files (from all code paths)
-        tempCollection.removeAll { fileURL in
-            let normalizedPath = fileURL.standardizedFileURL.path.pearFormat()
-            return formattedAppExclusionList.contains(normalizedPath) ||
-                   formattedAppExclusionList.contains(where: { normalizedPath.contains($0) })
-        }
-
-        // Deletion safety net: never offer protected roots or user-content
-        // paths, regardless of which search surfaced them
-        tempCollection.removeAll {
-            self.locations.isProtectedFromDeletion(
-                $0,
-                targetBundleIdentifier: self.appInfo.bundleIdentifier,
-                entitlementIdentifiers: self.appInfo.entitlements ?? []
-            )
-        }
-
-        let sortedCollection = tempCollection.map { $0.standardizedFileURL }.sorted(by: { $0.path < $1.path })
-        var filteredCollection: [URL] = []
-        var previousUrl: URL?
-        for url in sortedCollection {
-            if let previousUrl = previousUrl, url.path.hasPrefix(previousUrl.path + "/") {
-                continue
-            }
-            filteredCollection.append(url)
-            previousUrl = url
-        }
-        if filteredCollection.count == 1, let firstURL = filteredCollection.first, firstURL.path.contains(".Trash") {
-            filteredCollection.removeAll()
-        }
-        return Set(filteredCollection)
+        return DeletionSafetyPolicy.uninstallCandidates(
+            eligible, appBundle: appInfo.uninstallBundleURL, ownedFiles: ownedFiles
+        )
     }
 
     // Handle outlier paths based on conditions
@@ -835,18 +704,10 @@ class AppPathFinder {
     private func handlePostProcessing(sortedCollection: [URL]) {
         guard !shouldStop else { return }
         publishProgress(String(localized: "Calculating file sizes…"), found: sortedCollection.count)
-        // Fetch associated zombie files and add them to the collection
-        var tempCollection = sortedCollection
-        let associatedFiles = fetchAssociatedZombieFiles()
-        for file in associatedFiles {
-            if !tempCollection.contains(file) {
-                tempCollection.append(file) // Now it's properly included
-            }
-        }
 
         var fileSize: [URL: Int64] = [:]
         var fileIcon: [URL: NSImage?] = [:]
-        let chunks = createOptimalChunks(from: tempCollection)
+        let chunks = createOptimalChunks(from: sortedCollection)
         let queue = DispatchQueue(label: "size-calculation", qos: .userInitiated, attributes: .concurrent)
         let group = DispatchGroup()
 
@@ -874,30 +735,29 @@ class AppPathFinder {
         group.wait()
         guard !shouldStop else { return }
         let arch = checkAppBundleArchitecture(at: self.appInfo.path.path)
-        var updatedCollection = tempCollection
-        if updatedCollection.count == 1, let firstURL = updatedCollection.first, firstURL.path.contains(".Trash") {
-            updatedCollection.removeAll()
-        }
+        let ownedPaths = Set(ownedFiles.map(\.path))
+        let verifiedItems = Set(fileSize.keys.filter { ownedPaths.contains($0.path) })
 
         DispatchQueue.main.async {
             if let scanID = self.scanID {
                 guard self.appState?.appScanCoordinator.finish(scanID) == true else { return }
                 self.appState?.isScanningApp = false
-                self.appState?.appScanUnreadablePaths = self.collectionAccessQueue.sync { self.unreadablePaths.sorted() }
+                self.appState?.appScanUnreadablePaths = self.unreadableUninstallPaths
             }
             self.appInfo.fileSize = fileSize
             self.appInfo.fileIcon = fileIcon
             self.appInfo.arch = arch
             self.appState?.appInfo = self.appInfo
+            self.appState?.verifiedUninstallItems = verifiedItems
             if !self.undo {
-                self.appState?.selectedItems = Set(updatedCollection)
+                self.appState?.selectedItems = verifiedItems
             }
             self.appState?.progressStep = 0
             if self.scanID == nil { self.appState?.showProgress = false }
 
             let totalSize = fileSize.values.reduce(0, +)
             let sizeString = ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
-            GlobalConsoleManager.shared.appendOutput("✓ Found \(updatedCollection.count) items (\(sizeString))\n", source: CurrentPage.applications.title)
+            GlobalConsoleManager.shared.appendOutput("✓ Found \(fileSize.count) items (\(sizeString))\n", source: CurrentPage.applications.title)
 
             self.completion?()
         }
@@ -910,33 +770,19 @@ class AppPathFinder {
             self.publishProgress(String(localized: "Searching app files…"))
             await GlobalConsoleManager.shared.appendOutput("Searching for files related to \(self.appInfo.appName)...\n", source: CurrentPage.applications.title)
 
-            if self.appInfo.webApp {
-                await GlobalConsoleManager.shared.appendOutput("Detected web app, scanning containers...\n", source: CurrentPage.applications.title)
-                self.containerCollection = self.getAllContainers(bundleURL: self.appInfo.path)
-                self.initialURLProcessing()
-                self.finalizeCollection()
-            } else {
+            self.ownedFiles = self.verifiedUninstallFiles()
+            if !self.appInfo.webApp {
                 await GlobalConsoleManager.shared.appendOutput("Scanning \(self.locations.apps.paths.count) system locations...\n", source: CurrentPage.applications.title)
-                self.containerCollection = self.getAllContainers(bundleURL: self.appInfo.path)
-                self.initialURLProcessing()
                 self.collectLocations()
-                self.finalizeCollection()
             }
+            self.finalizeCollection()
         }
     }
 
-    // Public method for CLI
+    // CLI preview and removal use the same verified paths and exclusions.
     func findPathsCLI() -> Set<URL> {
-        if self.appInfo.webApp {
-            self.containerCollection = self.getAllContainers(bundleURL: self.appInfo.path)
-            self.initialURLProcessing()
-            return finalizeCollectionCLI()
-        } else {
-            self.containerCollection = self.getAllContainers(bundleURL: self.appInfo.path)
-            self.initialURLProcessing()
-            self.collectLocationsCLI()
-            return finalizeCollectionCLI()
-        }
+        ownedFiles = verifiedUninstallFiles()
+        return Set(filterCollection(Array(ownedFiles)))
     }
 
     // Custom icon function that handles .app folders intelligently

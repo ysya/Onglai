@@ -1,7 +1,14 @@
+import AppKit
 import XCTest
 @testable import Pearcleaner
 
 final class DebugIsolationTests: XCTestCase {
+    @MainActor
+    func testHostedTestsRunWithoutOpeningOnglai() {
+        XCTAssertEqual(NSApplication.shared.activationPolicy(), .prohibited)
+        XCTAssertTrue(NSApplication.shared.windows.isEmpty)
+    }
+
     func testCleanupPreservesTheOtherVariantsUpdateFiles() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

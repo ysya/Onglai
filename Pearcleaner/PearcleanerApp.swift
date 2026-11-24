@@ -10,6 +10,21 @@ import AppKit
 import AlinFoundation
 
 @main
+enum OnglaiMain {
+    @MainActor
+    static func main() {
+        // XCTest injects the test bundle into this executable. Keep its run loop
+        // available without starting the app's windows or background services.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.prohibited)
+            app.run()
+        } else {
+            PearcleanerApp.main()
+        }
+    }
+}
+
 struct PearcleanerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     //MARK: ObservedObjects
@@ -71,10 +86,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hosted unit tests must not probe privacy-protected folders or perform
-        // startup maintenance against the user's running application.
-        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
-
         NSWindow.allowsAutomaticWindowTabbing = false
 
         // Register as services provider (required for NSServices to work)

@@ -383,6 +383,32 @@ func killApp(appId: String) async {
     }
 }
 
+func quitAppForUninstall(_ app: AppInfo) -> Bool {
+    let bundle = app.uninstallBundleURL.standardizedFileURL
+    guard !DeletionSafetyPolicy.isSystemApp(bundle), DeletionSafetyPolicy.isUnaliased(bundle) else { return false }
+    if FileManager.default.fileExists(atPath: app.path.path),
+       Bundle(url: app.path)?.bundleIdentifier != app.bundleIdentifier { return false }
+    let bundlePath = bundle.path
+    let copies = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier)
+    guard copies.allSatisfy({ $0.bundleURL != nil }) else { return false }
+    let running = copies.filter {
+        guard let path = $0.bundleURL?.resolvingSymlinksInPath().path else { return false }
+        return path == bundlePath || path.hasPrefix(bundlePath + "/")
+    }
+    for copy in running {
+        copy.terminate()
+    }
+
+    let deadline = Date().addingTimeInterval(5)
+    func isRunning(_ app: NSRunningApplication) -> Bool {
+        !app.isTerminated && (kill(app.processIdentifier, 0) == 0 || errno != ESRCH)
+    }
+    while running.contains(where: isRunning) && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    return !running.contains(where: isRunning)
+}
+
 
 //MARK: Broken on 13.0
 // Open app settings

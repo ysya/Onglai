@@ -26,6 +26,7 @@ class AppState: ObservableObject {
     @Published var zombieFile: ZombieFile
     @Published var sortedApps: [AppInfo] = []
     @Published var selectedItems = Set<URL>()
+    @Published var verifiedUninstallItems = Set<URL>()
     @Published var currentView = CurrentDetailsView.empty
     @Published var currentPage: CurrentPage  // Initialized from stored preference in init()
     @Published var showAlert: Bool = false
@@ -61,9 +62,9 @@ class AppState: ObservableObject {
         appInfo.fileSize = appInfo.fileSize.filter { !result.moved.contains($0.key) }
         appInfo.fileIcon = appInfo.fileIcon.filter { !result.moved.contains($0.key) }
         selectedItems = result.failed
-        let container = appInfo.path.deletingLastPathComponent().deletingLastPathComponent()
-        let appWasRemoved = result.moved.contains(appInfo.path)
-            || (appInfo.wrapped && result.moved.contains(container))
+        verifiedUninstallItems.subtract(result.moved)
+        let appBundlePath = appInfo.uninstallBundleURL.standardizedFileURL.path
+        let appWasRemoved = result.moved.contains { $0.standardizedFileURL.path == appBundlePath }
         if appWasRemoved {
             sortedApps.removeAll { $0.path == appInfo.path }
         }
@@ -429,6 +430,14 @@ struct AppInfo: Identifiable, Equatable, Hashable {
 
     var brew: Bool {
         return cask != nil
+    }
+
+    var uninstallBundleURL: URL {
+        let parent = path.deletingLastPathComponent()
+        if wrapped && parent.lastPathComponent == "Wrapper" {
+            return parent.deletingLastPathComponent()
+        }
+        return path
     }
 
     var executableURL: URL? {

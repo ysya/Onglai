@@ -55,7 +55,7 @@ struct GeneralSettingsTab: View {
                                     Text("Homebrew cleanup after uninstall")
                                         .font(.callout)
                                         .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText.opacity(1))
-                                    InfoButton(text: String(localized: "When Homebrew cleanup is enabled, Onglai will check if the app you are removing was installed via Homebrew and remove the cache to keep everything synced up."))
+                                    InfoButton(text: String(localized: "Clean up the Homebrew record when the installed cask lists only this app and has no custom uninstall scripts."))
                                 }
 
                             }

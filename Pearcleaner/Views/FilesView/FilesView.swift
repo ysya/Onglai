@@ -10,6 +10,12 @@ import Foundation
 import SwiftUI
 
 struct FilesView: View {
+    private enum UninstallAttempt {
+        case moved(TrashResult)
+        case couldNotQuit
+        case scanChanged
+    }
+
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var fsm: FolderSettingsManager
     @EnvironmentObject var locations: Locations
@@ -269,15 +275,23 @@ struct FilesView: View {
     }
 
     // Apply only confirmed moves, keeping failures selected for a retry.
-    private func handleUninstallAction() {
-        guard !appState.isDeletingFiles, !appState.isScanningApp, !appState.selectedItems.isEmpty else { return }
+    private func handleUninstallAction(hasHiddenSelection: Bool) {
+        let selectedItems = appState.selectedItems.intersection(appState.verifiedUninstallItems)
+        guard !appState.isDeletingFiles, !appState.isScanningApp, !selectedItems.isEmpty else { return }
         let app = appState.appInfo
-        let selectedItemsArray = Array(appState.selectedItems)
-        let hasHiddenSelection = !appState.fileSearchText.isEmpty
+        let selectedItemsArray = Array(selectedItems)
+        let verifiedPaths = Set(appState.verifiedUninstallItems.map(\.path))
+        let hasRetainedFiles = app.fileSize.keys.contains { !appState.verifiedUninstallItems.contains($0) }
+        var message = hasHiddenSelection
+            ? String(localized: "Move \(selectedItemsArray.count) selected items to Trash? This includes selected items hidden by the search filter.")
+            : String(localized: "Move \(selectedItemsArray.count) selected items to Trash?")
+        if hasRetainedFiles {
+            message += "\n\n" + String(localized: "Shared files and files with unverified ownership are kept.")
+        }
         showCustomAlert(
-            enabled: confirmAlert || hasHiddenSelection,
+            enabled: confirmAlert || hasHiddenSelection || hasRetainedFiles || !appState.appScanUnreadablePaths.isEmpty,
             title: String(localized: "Move Selected Files to Trash"),
-            message: String(localized: "Move \(selectedItemsArray.count) selected items to Trash? This includes selected items hidden by the search filter."),
+            message: message,
             okText: "Move to Trash",
             style: .warning,
             onOk: {
@@ -289,12 +303,35 @@ struct FilesView: View {
                         sendStartNotificationFW()
                         appState.isDeletingFiles = false
                     }
-                    await killApp(appId: app.bundleIdentifier)
-                    let result = await Task.detached(priority: .userInitiated) {
-                        let valid = filterValidFiles(fileURLs: selectedItemsArray)
-                        let moved = FileManagerUndo.shared.deleteFilesWithResult(at: valid, bundleName: app.appName)
-                        return TrashResult(moved: moved.moved, failed: Set(selectedItemsArray).subtracting(moved.moved))
+                    let finder = AppPathFinder(appInfo: app, locations: locations)
+                    let attempt = await Task.detached(priority: .userInitiated) { () -> UninstallAttempt in
+                        guard quitAppForUninstall(app) else { return .couldNotQuit }
+                        guard Set(finder.findPathsCLI().map(\.path)) == verifiedPaths else { return .scanChanged }
+                        return .moved(FileManagerUndo.shared.deleteFilesWithResult(
+                            at: selectedItemsArray, bundleName: app.appName, appBundleToMoveLast: app.uninstallBundleURL
+                        ))
                     }.value
+                    let result: TrashResult
+                    switch attempt {
+                    case .moved(let trashResult):
+                        result = trashResult
+                    case .couldNotQuit:
+                        showCustomAlert(
+                            title: String(localized: "Could Not Uninstall"),
+                            message: String(localized: "Check that the selected application is still at the same path and has quit, then try again."),
+                            style: .warning
+                        )
+                        return
+                    case .scanChanged:
+                        appState.isDeletingFiles = false
+                        refreshFiles()
+                        showCustomAlert(
+                            title: String(localized: "Uninstall List Changed"),
+                            message: String(localized: "Review the refreshed list before moving files to Trash."),
+                            style: .informational
+                        )
+                        return
+                    }
                     let appWasRemoved = appState.applyTrashResult(result)
                     updateSortedFiles()
                     GlobalConsoleManager.shared.appendOutput(
@@ -302,19 +339,21 @@ struct FilesView: View {
                         source: CurrentPage.applications.title
                     )
                     guard result.failed.isEmpty else { return }
-                    let appIsGone = appWasRemoved || !FileManager.default.fileExists(atPath: app.path.path)
-                    processNextExternalApp(appWasRemoved: appIsGone, isInTrash: app.path.path.contains(".Trash"))
+                    let appIsGone = appWasRemoved || !fileSystemItemMayExist(at: app.uninstallBundleURL)
+                    processNextExternalApp(appWasRemoved: appIsGone)
                 }
             })
     }
 
     // Helper function to process the next external app
-    private func processNextExternalApp(appWasRemoved: Bool, isInTrash: Bool) {
+    private func processNextExternalApp(appWasRemoved: Bool) {
         // Store the current app path before any removal
         let currentAppPath = appState.appInfo.path
 
-        // Check if the current app requires brew cleanup (Is brew cleanup enabled, was main app bundle removed or was main bundle in Trash)
-        if brew && (appWasRemoved || isInTrash), let caskName = appState.appInfo.cask {
+        let appBundle = appState.appInfo.uninstallBundleURL
+        if brew, appWasRemoved, let caskName = appState.appInfo.cask,
+           !fileSystemItemMayExist(at: appBundle),
+           HomebrewUninstaller.shared.hasSimpleReceipt(for: caskName, appBundle: appBundle) {
             // Set flag to show progress indicator
             updateOnMain {
                 appState.isBrewCleanupInProgress = true
@@ -326,7 +365,7 @@ struct FilesView: View {
                     try await HomebrewUninstaller.shared.uninstallPackage(
                         name: caskName,
                         cask: true,
-                        zap: true
+                        zap: false
                     )
                 } catch {
                     printOS("Homebrew cleanup failed for \(caskName): \(error.localizedDescription)")
@@ -348,6 +387,12 @@ struct FilesView: View {
                 }
             }
             return
+        }
+        if brew, appWasRemoved, let caskName = appState.appInfo.cask {
+            GlobalConsoleManager.shared.appendOutput(
+                "Homebrew record kept for \(caskName). The receipt could not verify a single app uninstall.\n",
+                source: CurrentPage.applications.title
+            )
         }
 
         // Remove the CURRENT app from the queue (not necessarily the first)
@@ -579,17 +624,17 @@ struct FileDetailsItem: View {
         let fileIcon = appState.appInfo.fileIcon[path]
         let iconImage = fileIcon.flatMap { $0.map(Image.init(nsImage:)) }
         let displaySize = formatByte(size: size).human
+        let isVerified = appState.verifiedUninstallItems.contains(path)
 
         HStack(alignment: .center, spacing: 15) {
             Button(action: {
-                if !self.path.path.contains(".Trash") {
-                    isSelected.toggle()
-                }
+                isSelected.toggle()
             }) {
                 EmptyView()
             }
             .buttonStyle(CircleCheckboxButtonStyle(isSelected: isSelected))
-            .disabled(self.path.path.contains(".Trash"))
+            .disabled(!isVerified)
+            .help(isVerified ? "" : String(localized: "Kept because exclusive ownership could not be verified."))
 
             if let appIcon = iconImage {
                 appIcon

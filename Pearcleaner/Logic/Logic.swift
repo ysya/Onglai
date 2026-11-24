@@ -469,6 +469,7 @@ func showAppInFiles(
         appState.fileSearchText = ""
         appState.appInfo = .empty
         appState.selectedItems = []
+        appState.verifiedUninstallItems = []
 
         // Initialize per-app sensitivity from global setting if not already set
         if appState.perAppSensitivity[appInfo.path.path] == nil {
@@ -601,12 +602,6 @@ func reloadAppsList(
 // Process CLI // ========================================================================================================
 
 func handleLaunchMode() {
-    // XCTest injects its own launch arguments into the host application.
-    // They are not Onglai CLI commands and must never reach ArgumentParser.
-    if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
-        return
-    }
-
     // When the executable runs outside the app bundle (e.g. via the
     // /usr/local/bin/ong symlink), Bundle.main has no Info.plist, so
     // UserDefaults.standard resolves to a domain named after the process
@@ -640,7 +635,7 @@ func handleLaunchMode() {
 
     // Check if any CLI command arguments are present (even if not in terminal)
     // This handles cases like SUDO_ASKPASS where the app is launched without a terminal
-    let cliCommands = ["uninstall", "list", "search", "help", "ask-password"]
+    let cliCommands = PearCLI.configuration.subcommands.compactMap { $0.configuration.commandName } + ["help"]
     let hasCLICommand = arguments.dropFirst().contains { arg in
         cliCommands.contains(arg) || arg.hasPrefix("--")
     }
