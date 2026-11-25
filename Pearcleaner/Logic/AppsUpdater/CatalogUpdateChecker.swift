@@ -86,6 +86,8 @@ actor CatalogCache {
 }
 
 enum CatalogUpdateChecker {
+    typealias ArchiveHeaderLoader = (URLRequest) async throws -> HTTPURLResponse
+
     private static let cache = CatalogCache {
         let url = URL(string: "https://formulae.brew.sh/api/cask.json")!
         let data = try await UpdateHTTPClient.data(from: url, maximumBytes: 32 * 1024 * 1024)
@@ -101,6 +103,7 @@ enum CatalogUpdateChecker {
     static func checkForUpdates(
         apps: [AppInfo],
         rules: UpdaterRuleSet = UpdaterRuleStore.shared.snapshot,
+        archiveHeaders: ArchiveHeaderLoader = { try await UpdateHTTPClient.response(for: $0, maximumBytes: 0).1 },
         loader: () async throws -> [CatalogCask] = { try await cache.load() }
     ) async -> UpdateCheckResults {
         let apps = apps.filter(isEligible)
@@ -127,8 +130,23 @@ enum CatalogUpdateChecker {
                 }
                 continue
             }
-            let projection = versionProjection(for: app, cask: cask, rules: rules)
-            guard supportsPlatform(cask), let remote = projection.version ?? marketingVersion(cask.version),
+            guard supportsPlatform(cask) else {
+                results.failures.append(failure(for: app, message: "The catalogue version cannot be compared safely"))
+                continue
+            }
+            var projection = versionProjection(for: app, cask: cask, rules: rules)
+            var verifiedArtifact: NativeUpdateArtifact?
+            if cask.token == "istat-menus", cask.version == "7.50.3", app.bundleIdentifier == "com.bjango.istatmenus" {
+                let artifact = await verifiedIStatMenusArchive(cask, archiveHeaders: archiveHeaders)
+                guard !Task.isCancelled else { return UpdateCheckResults() }
+                guard let artifact else {
+                    results.failures.append(failure(for: app, message: "The catalogue version cannot be compared safely"))
+                    continue
+                }
+                projection = VersionProjection(version: artifact.version, build: artifact.build)
+                verifiedArtifact = artifact
+            }
+            guard let remote = projection.version ?? marketingVersion(cask.version),
                   let comparison = UpdateVersionComparator.compare(installed: app.appVersion, available: remote) else {
                 results.failures.append(failure(for: app, message: "The catalogue version cannot be compared safely"))
                 continue
@@ -158,7 +176,7 @@ enum CatalogUpdateChecker {
                     appInfo: app, availableVersion: projection.displayVersion ?? remote, availableBuildNumber: verifiedBuild,
                     source: .catalog, adamID: nil, appStoreURL: nil,
                     externalURL: cask.homepage,
-                    nativeArtifact: cask.nativeArtifact(version: projection.displayVersion ?? remote, build: verifiedBuild),
+                    nativeArtifact: verifiedArtifact ?? cask.nativeArtifact(version: projection.displayVersion ?? remote, build: verifiedBuild),
                     isSelectedForUpdate: false, releaseTitle: nil, releaseDescription: nil,
                     releaseNotesLink: nil, releaseDate: nil,
                     isPreRelease: UpdateVersionComparator.channel(for: remote) != "stable",
@@ -178,6 +196,23 @@ enum CatalogUpdateChecker {
             }
         }
         return results
+    }
+
+    private static func verifiedIStatMenusArchive(_ cask: CatalogCask, archiveHeaders: ArchiveHeaderLoader) async -> NativeUpdateArtifact? {
+        // The publisher's 7.50.3 download contains a signed 7.50 (2395) bundle.
+        // The CDN can replace this ZIP in place. Check its observed headers before
+        // using the mapping and require the verified byte digest during installation.
+        let url = URL(string: "https://cdn.istatmenus.app/files/istatmenus7/versions/iStatMenus7.50.3.zip")!
+        let sha256 = "e477dc76606a6181697652ead6f3ce977e716b878165ac1aa945cc470b9ce25d"
+        guard cask.isDirectAppRecipe, cask.archiveURL == url,
+              cask.archiveSHA256 == "no_check" || cask.archiveSHA256?.lowercased() == sha256 else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
+        request.httpMethod = "HEAD"
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+        guard let response = try? await archiveHeaders(request), response.statusCode == 200, response.url == url,
+              response.value(forHTTPHeaderField: "Last-Modified") == "Mon, 09 Nov 2026 23:27:25 GMT",
+              response.value(forHTTPHeaderField: "Content-Length") == "25439637" else { return nil }
+        return NativeUpdateArtifact(url: url, version: "7.50", build: "2395", digest: .init(algorithm: .sha256, value: sha256))
     }
 
     static func match(for app: AppInfo, in entries: [CatalogCask]) -> CatalogCask? {

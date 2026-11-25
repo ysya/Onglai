@@ -229,6 +229,52 @@ final class CatalogUpdateCheckerTests: XCTestCase {
         XCTAssertEqual(results.failures.count, 1)
     }
 
+    func testIStatMenusCatalogArchiveWithInstalledBuildIsCurrent() async {
+        let local = iStatMenusApp(build: "2395")
+        let results = await CatalogUpdateChecker.checkForUpdates(apps: [local], rules: .bundled()) { request in
+            XCTAssertEqual(request.httpMethod, "HEAD")
+            XCTAssertEqual(request.url, self.iStatMenusCask().archiveURL)
+            return self.iStatMenusArchiveResponse(url: try XCTUnwrap(request.url))
+        } loader: { [self.iStatMenusCask()] }
+        XCTAssertTrue(results.updates.isEmpty)
+        XCTAssertTrue(results.failures.isEmpty)
+        XCTAssertEqual(results.currentAppPaths, [local.path])
+    }
+
+    func testIStatMenusCatalogArchiveOffersTheSignedVersionAndBuildToOlderInstallations() async throws {
+        let local = iStatMenusApp(build: "2394")
+        let results = await CatalogUpdateChecker.checkForUpdates(apps: [local], rules: .bundled()) { request in
+            self.iStatMenusArchiveResponse(url: try XCTUnwrap(request.url))
+        } loader: { [self.iStatMenusCask()] }
+        let update = try XCTUnwrap(results.updates.first)
+        let artifact = try XCTUnwrap(update.nativeArtifact)
+        XCTAssertEqual(update.availableVersion, "7.50")
+        XCTAssertEqual(update.availableBuildNumber, "2395")
+        XCTAssertEqual(artifact.version, "7.50")
+        XCTAssertEqual(artifact.build, "2395")
+        XCTAssertEqual(artifact.digest, .init(algorithm: .sha256, value: "e477dc76606a6181697652ead6f3ce977e716b878165ac1aa945cc470b9ce25d"))
+        XCTAssertTrue(results.failures.isEmpty)
+    }
+
+    func testIStatMenusCatalogDoesNotApplyVerifiedMetadataWhenTheArchiveChanges() async {
+        let local = iStatMenusApp(build: "2395")
+        let results = await CatalogUpdateChecker.checkForUpdates(apps: [local], rules: .bundled()) { request in
+            self.iStatMenusArchiveResponse(url: try XCTUnwrap(request.url), modified: "Tue, 10 Nov 2026 23:27:25 GMT")
+        } loader: { [self.iStatMenusCask()] }
+        XCTAssertTrue(results.updates.isEmpty)
+        XCTAssertTrue(results.currentAppPaths.isEmpty)
+        XCTAssertEqual(results.failures.first?.kind, .unavailable)
+    }
+
+    func testIStatMenusLaterCatalogVersionsAreComparedNormally() async {
+        let results = await CatalogUpdateChecker.checkForUpdates(apps: [iStatMenusApp(build: "2395")], rules: .bundled()) { _ in
+            XCTFail("Checking this archive must be limited to the known catalogue release")
+            throw URLError(.badURL)
+        } loader: { [self.iStatMenusCask(version: "7.51")] }
+        XCTAssertEqual(results.updates.first?.availableVersion, "7.51")
+        XCTAssertTrue(results.failures.isEmpty)
+    }
+
     func testLoadErrorsRemainFailuresAndDoNotConfirmCurrent() async {
         let results = await catalogUpdates(apps: [app()]) { throw URLError(.notConnectedToInternet) }
         XCTAssertTrue(results.currentAppPaths.isEmpty)
@@ -429,6 +475,22 @@ final class CatalogUpdateCheckerTests: XCTestCase {
         CatalogCask(token: token, names: ["Example"], version: version, bundleVersion: bundleVersion,
                     bundleShortVersion: bundleShortVersion, appNames: ["Example.app"],
                     bundleIdentifiers: ["com.example.editor"])
+    }
+
+    private func iStatMenusApp(build: String) -> AppInfo {
+        app(name: "iStat Menus", filename: "iStat Menus.app", bundleID: "com.bjango.istatmenus", version: "7.50", build: build)
+    }
+
+    private func iStatMenusCask(version: String = "7.50.3") -> CatalogCask {
+        CatalogCask(token: "istat-menus", names: ["iStats Menus"], version: version,
+                    appNames: ["iStat Menus.app"], bundleIdentifiers: ["com.bjango.istatmenus"],
+                    archiveURL: URL(string: "https://cdn.istatmenus.app/files/istatmenus7/versions/iStatMenus\(version).zip"),
+                    archiveSHA256: "no_check", isDirectAppRecipe: true)
+    }
+
+    private func iStatMenusArchiveResponse(url: URL, modified: String = "Mon, 09 Nov 2026 23:27:25 GMT") -> HTTPURLResponse {
+        HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/2",
+                        headerFields: ["Last-Modified": modified, "Content-Length": "25439637"])!
     }
 
     private func app(name: String = "Example", filename: String = "Example.app", parent: String = "/Applications",
