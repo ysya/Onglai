@@ -3,7 +3,8 @@ import Foundation
 
 struct NativeUpdateCoordinator: @unchecked Sendable {
     typealias Progress = @Sendable (NativeInstallProgress) -> Void
-    typealias Installer = @Sendable (NativeInstallTarget, NativeUpdateArtifact, @escaping Progress) async throws -> NativeInstallResult
+    typealias Installer = @Sendable (NativeInstallTarget, NativeUpdateArtifact, @escaping Progress,
+                                     @escaping NativeAppInstaller.PrepareReplacement) async throws -> NativeInstallResult
 
     private let isRunning: @MainActor (NativeInstallTarget) -> Bool
     private let confirmQuit: @MainActor (NativeInstallTarget) -> Bool
@@ -13,8 +14,9 @@ struct NativeUpdateCoordinator: @unchecked Sendable {
     init(isRunning: @escaping @MainActor (NativeInstallTarget) -> Bool = NativeUpdateCoordinator.running,
          confirmQuit: @escaping @MainActor (NativeInstallTarget) -> Bool = NativeUpdateCoordinator.askToQuit,
          terminate: @escaping @MainActor (NativeInstallTarget) -> Void = NativeUpdateCoordinator.requestTermination,
-         install: @escaping Installer = { target, artifact, progress in
-             try await NativeAppInstaller().install(target: target, artifact: artifact, progress: progress)
+         install: @escaping Installer = { target, artifact, progress, prepareReplacement in
+             try await NativeAppInstaller().install(target: target, artifact: artifact, progress: progress,
+                                                    prepareReplacement: prepareReplacement)
          }) {
         self.isRunning = isRunning
         self.confirmQuit = confirmQuit
@@ -24,6 +26,13 @@ struct NativeUpdateCoordinator: @unchecked Sendable {
 
     func install(target: NativeInstallTarget, artifact: NativeUpdateArtifact,
                  progress: @escaping Progress) async throws -> NativeInstallResult {
+        try Task.checkCancellation()
+        return try await installer(target, artifact, progress) {
+            try await prepareReplacement(for: target)
+        }
+    }
+
+    private func prepareReplacement(for target: NativeInstallTarget) async throws {
         try Task.checkCancellation()
         if await isRunning(target) {
             guard await confirmQuit(target) else { throw CancellationError() }
@@ -37,7 +46,6 @@ struct NativeUpdateCoordinator: @unchecked Sendable {
         }
         try Task.checkCancellation()
         guard !(await isRunning(target)) else { throw CoordinatorError.appStillRunning }
-        return try await installer(target, artifact, progress)
     }
 
     @MainActor private static func applications(_ target: NativeInstallTarget) -> [NSRunningApplication] {

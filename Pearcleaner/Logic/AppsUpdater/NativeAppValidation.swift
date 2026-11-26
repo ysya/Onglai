@@ -143,16 +143,39 @@ enum NativeAppValidation {
     }
 
     static func checkVersions(_ request: NativeInstallRequest, installed: Metadata, candidate: Metadata) throws {
+        try checkIdentities(request, installed: installed, candidate: candidate)
+        try checkNewerRelease(request, installed: installed, candidate: candidate)
+    }
+
+    /// Applies only to the inspected download. The replacement transaction still requires a newer exact release.
+    static func requiresReplacement(_ request: NativeInstallRequest, installed: Metadata, candidate: Metadata,
+                                    signatureCheck: (URL, URL) throws -> Void = checkSignature) throws -> Bool {
+        try checkIdentities(request, installed: installed, candidate: candidate)
+        try signatureCheck(request.candidateURL, request.targetURL)
+        if installed.version == candidate.version, let build = installed.build, !build.isEmpty,
+           request.installedBuild == build, candidate.build == build {
+            return false
+        }
+        try checkNewerRelease(request, installed: installed, candidate: candidate)
+        return true
+    }
+
+    private static func checkIdentities(_ request: NativeInstallRequest, installed: Metadata, candidate: Metadata) throws {
         guard installed.identifier == request.bundleIdentifier, candidate.identifier == request.bundleIdentifier,
               installed.identifier != Bundle.main.bundleIdentifier,
               !installed.identifier.hasPrefix("com.apple."),
-              !installed.identifier.hasSuffix("-setapp"),
-              installed.version == request.installedVersion,
-              request.installedBuild.map({ installed.build == $0 }) ?? true,
-              candidate.version == request.expectedVersion,
-              request.expectedBuild.map({ candidate.build == $0 }) ?? true else {
-            throw NativeInstallError.invalidPayload("The application identity or exact release version does not match the update.")
+              !installed.identifier.hasSuffix("-setapp") else {
+            throw NativeInstallError.invalidPayload(String(localized: "The application identity does not match the update."))
         }
+        guard installed.version == request.installedVersion,
+              request.installedBuild.map({ installed.build == $0 }) ?? true else {
+            throw NativeInstallError.invalidPayload(String(localized: "The installed app changed. Check for updates again."))
+        }
+    }
+
+    private static func checkNewerRelease(_ request: NativeInstallRequest, installed: Metadata, candidate: Metadata) throws {
+        guard candidate.version == request.expectedVersion,
+              request.expectedBuild.map({ candidate.build == $0 }) ?? true else { throw NativeInstallError.releaseMismatch }
         let order = UpdateVersionComparator.compare(installed: installed.version, available: candidate.version)
         let newerBuild = order == .orderedSame && installed.build.flatMap { local in
             candidate.build.flatMap { UpdateVersionComparator.compare(installed: local, available: $0) }

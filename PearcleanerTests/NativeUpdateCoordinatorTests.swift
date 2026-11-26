@@ -3,11 +3,25 @@ import XCTest
 
 @MainActor
 final class NativeUpdateCoordinatorTests: XCTestCase {
-    func testRefusingToQuitNeverStartsTheInstaller() async {
+    func testVerifiedCurrentDownloadDoesNotAskToQuitARunningApp() async throws {
+        let coordinator = NativeUpdateCoordinator(
+            isRunning: { _ in true }, confirmQuit: { _ in XCTFail("A verified current build needs no replacement"); return false },
+            terminate: { _ in XCTFail("A verified current build must leave the app running") },
+            install: { _, _, _, _ in .alreadyCurrent }
+        )
+        let result = try await coordinator.install(target: target, artifact: artifact, progress: { _ in })
+        guard case .alreadyCurrent = result else { return XCTFail("Expected the installed build to remain current") }
+    }
+
+    func testRefusingToQuitNeverReplacesTheApplication() async {
         let coordinator = NativeUpdateCoordinator(
             isRunning: { _ in true }, confirmQuit: { _ in false },
             terminate: { _ in XCTFail("Must not terminate without consent") },
-            install: { _, _, _ in XCTFail("Must not install a running app"); return NativeInstallResult() }
+            install: { _, _, _, prepareReplacement in
+                try await prepareReplacement()
+                XCTFail("Must not install a running app")
+                return .installed()
+            }
         )
         do {
             _ = try await coordinator.install(target: target, artifact: artifact, progress: { _ in })
@@ -24,9 +38,11 @@ final class NativeUpdateCoordinatorTests: XCTestCase {
                 XCTAssertTrue(state.consented)
                 state.running = false
             },
-            install: { _, _, _ in
+            install: { _, _, _, prepareReplacement in
+                await MainActor.run { XCTAssertTrue(state.running) }
+                try await prepareReplacement()
                 await MainActor.run { XCTAssertFalse(state.running) }
-                return NativeInstallResult()
+                return .installed()
             }
         )
         _ = try await coordinator.install(target: target, artifact: artifact, progress: { _ in })

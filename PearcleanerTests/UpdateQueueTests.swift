@@ -7,7 +7,7 @@ final class UpdateQueueTests: XCTestCase {
         completion.assertForOverFulfill = true
         let operation = NativeAppUpdateOperation(bundleIdentifier: "test.native", appURL: URL(fileURLWithPath: "/fixture/Native.app"), work: {
             XCTFail("Cancelled work must not start")
-            return NativeInstallResult()
+            return .installed()
         }, completion: { result in
             if case .success = result { XCTFail("Cancellation must not succeed") }
             completion.fulfill()
@@ -35,7 +35,7 @@ final class UpdateQueueTests: XCTestCase {
         queue.isSuspended = true
         let path = URL(fileURLWithPath: "/fixture/Native.app")
         let operation = NativeAppUpdateOperation(bundleIdentifier: "test.native", appURL: path,
-                                                work: { NativeInstallResult() }, completion: { _ in })
+                                                work: { .installed() }, completion: { _ in })
         queue.addOperation(operation)
         XCTAssertTrue(queue.containsOperation(for: "test.native", appURL: nil))
         XCTAssertTrue(queue.containsOperation(for: "another.source", appURL: path))

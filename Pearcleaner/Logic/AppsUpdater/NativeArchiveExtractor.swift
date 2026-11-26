@@ -137,6 +137,10 @@ enum NativeArchiveExtractor {
                 // Some disk-image builders store Finder window artwork directly at the volume root.
                 if format == .dmg, depth == 0, name == ".background.tiff", attributes.isRegularFile == true,
                    try hasTIFFHeader(item) { continue }
+                if ["pkg", "mpkg"].contains(item.pathExtension.lowercased()),
+                   attributes.isRegularFile == true || attributes.isDirectory == true {
+                    throw NativeInstallError.manualInstallerRequired
+                }
                 if attributes.isDirectory == true { try visit(item, depth: depth + 1); continue }
                 let lower = name.lowercased()
                 guard lower.hasPrefix("readme") || lower.hasPrefix("license") || lower.hasPrefix("licence") else {

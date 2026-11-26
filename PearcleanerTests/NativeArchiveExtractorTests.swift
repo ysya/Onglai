@@ -17,7 +17,9 @@ final class NativeArchiveExtractorTests: XCTestCase {
         XCTAssertEqual(selected.resolvingSymlinksInPath().path, app.resolvingSymlinksInPath().path)
 
         try Data("installer".utf8).write(to: root.appendingPathComponent("Installer.pkg"))
-        XCTAssertThrowsError(try NativeArchiveExtractor.selectApplication(in: root, format: .dmg))
+        XCTAssertThrowsError(try NativeArchiveExtractor.selectApplication(in: root, format: .dmg)) { error in
+            guard case NativeInstallError.manualInstallerRequired = error else { return XCTFail("Expected the publisher's installer to be required") }
+        }
     }
 
     func testArchivesRejectTIFFBackgroundOutsideTheDiskImageRootAndRejectInvalidHeaders() throws {

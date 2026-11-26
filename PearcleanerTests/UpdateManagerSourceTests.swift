@@ -285,7 +285,7 @@ final class UpdateManagerSourceTests: XCTestCase {
         let manager = manager(openURL: { opened.append($0); return true }, nativeUpdate: { target, _, progress in
             await MainActor.run { calls.installed.append(target.url) }
             progress(NativeInstallProgress(phase: .downloading, fraction: 0.5))
-            return NativeInstallResult()
+            return .installed()
         })
         let target = app("native")
         var candidate = update(target, source: .catalog)
@@ -319,7 +319,7 @@ final class UpdateManagerSourceTests: XCTestCase {
         let manager = manager(nativeUpdate: { target, _, _ in
             let count = await MainActor.run { calls.installed.append(target.url); return calls.installed.count }
             if count == 1 { throw URLError(.networkConnectionLost) }
-            return NativeInstallResult()
+            return .installed()
         })
         var candidate = update(app("native"), source: .official)
         candidate.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/app.zip")!, version: "2.0")!
@@ -341,7 +341,7 @@ final class UpdateManagerSourceTests: XCTestCase {
             let manager = manager(nativeUpdate: { target, _, _ in
                 let count = await MainActor.run { calls.installed.append(target.url); return calls.installed.count }
                 if count == 1 { throw NativeArtifactDownload.RetryableHTTPError(statusCode: statusCode) }
-                return NativeInstallResult()
+                return .installed()
             })
             var candidate = update(app("native"), source: .official)
             candidate.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/app.zip")!, version: "2.0")!
@@ -404,6 +404,69 @@ final class UpdateManagerSourceTests: XCTestCase {
         XCTAssertEqual(opened.last, URL(string: "https://publisher.example.com/releases"))
     }
 
+    func testRejectingOneNativeArchiveKeepsAnIndependentAlternativeAvailable() async {
+        let manager = manager(nativeUpdate: { _, _, _ in
+            throw NativeInstallError.invalidPayload("Fixture publisher signature mismatch")
+        })
+        let target = app("native")
+        var official = update(target, source: .official)
+        official.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/one.zip")!, version: "2.0")!
+        var catalog = update(target, source: .catalog)
+        catalog.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/two.zip")!, version: "2.0")!
+        manager.updatesBySource[.official] = [official]
+        manager.updatesBySource[.catalog] = [catalog]
+
+        await manager.updateApp(official)
+
+        XCTAssertNil(manager.updatesBySource[.official]?.first?.nativeArtifact)
+        XCTAssertEqual(manager.appCentricItems.first?.primaryApp?.id, catalog.id)
+        XCTAssertEqual(manager.appCentricItems.first?.section, .available)
+        XCTAssertEqual(manager.updatesBySource[.catalog]?.first?.nativeArtifact, catalog.nativeArtifact)
+    }
+
+    func testVerifiedCurrentDownloadWithdrawsOnlyTheMatchingOffer() async {
+        let manager = manager(nativeUpdate: { _, _, _ in .alreadyCurrent })
+        let target = app("native")
+        var catalog = update(target, source: .catalog)
+        catalog.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/same.zip")!, version: "2.0")!
+        var official = update(target, source: .official, version: "3.0")
+        official.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/new.zip")!, version: "3.0")!
+        manager.updatesBySource[.catalog] = [catalog]
+        manager.updatesBySource[.official] = [official]
+
+        await manager.updateApp(catalog)
+
+        XCTAssertTrue(manager.updatesBySource[.catalog]?.isEmpty == true)
+        XCTAssertEqual(manager.appCentricItems.first?.primaryApp?.id, official.id)
+        XCTAssertEqual(manager.appCentricItems.first?.section, .available)
+
+        manager.updatesBySource[.official] = []
+        await manager.rebuildDerivedResults(apps: [target])
+        XCTAssertEqual(manager.appCentricItems.first?.section, .current)
+    }
+
+    func testPublisherInstallationAndReleaseMismatchUseManualUpdateActions() async {
+        for error in [NativeInstallError.manualInstallerRequired, .releaseMismatch] {
+            let manager = manager(nativeUpdate: { _, _, _ in throw error })
+            var candidate = update(app("native"), source: .catalog)
+            candidate.externalURL = "https://publisher.example.com/releases"
+            candidate.nativeArtifact = NativeUpdateArtifact(url: URL(string: "https://publisher.example.com/app.zip")!, version: "2.0")!
+            candidate.isSelectedForUpdate = true
+            manager.updatesBySource[.catalog] = [candidate]
+
+            await manager.updateApp(candidate)
+
+            let item = manager.appCentricItems.first
+            guard let fallback = item?.primaryApp else { return XCTFail("Expected manual update actions") }
+            XCTAssertEqual(item?.section, .external)
+            XCTAssertEqual(fallback.status, .manualInstallation(error.localizedDescription))
+            XCTAssertNil(fallback.nativeArtifact)
+            XCTAssertFalse(fallback.isSelectedForUpdate)
+            XCTAssertNotNil(fallback.officialUpdateURL)
+            XCTAssertTrue(manager.canStartUpdate(fallback))
+        }
+    }
+
     func testPermissionFailureFallsBackToVendorActionsWithoutRetryingInstallation() async {
         let calls = NativeUpdateTestCalls()
         var opened: [URL] = []
@@ -445,7 +508,7 @@ final class UpdateManagerSourceTests: XCTestCase {
             await MainActor.run { calls.installed.append(target.url) }
             started.fulfill()
             await gate.wait()
-            return NativeInstallResult()
+            return .installed()
         })
         let target = app("native")
         var official = update(target, source: .official)

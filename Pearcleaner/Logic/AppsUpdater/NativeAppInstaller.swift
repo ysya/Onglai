@@ -57,9 +57,9 @@ struct NativeInstallRequest: Codable, Sendable {
     }
 }
 
-struct NativeInstallResult: Codable, Sendable {
-    let recoveryURL: URL?
-    init(recoveryURL: URL? = nil) { self.recoveryURL = recoveryURL }
+enum NativeInstallResult: Sendable {
+    case installed(recoveryURL: URL? = nil)
+    case alreadyCurrent
 }
 
 struct NativeInstallProgress: Sendable {
@@ -72,6 +72,8 @@ enum NativeInstallError: Error, LocalizedError {
     case cancelled
     case appRunning
     case authorizationRequired
+    case manualInstallerRequired
+    case releaseMismatch
     case recoveryRequired(URL)
     case invalidPayload(String)
 
@@ -80,6 +82,8 @@ enum NativeInstallError: Error, LocalizedError {
         case .cancelled: return "The update was cancelled."
         case .appRunning: return "Quit the app before installing its update."
         case .authorizationRequired: return "This app cannot be replaced with your current permissions. Open it or use the publisher's installer."
+        case .manualInstallerRequired: return String(localized: "The download contains a package installer. Use the publisher’s installer to update this app.")
+        case .releaseMismatch: return String(localized: "The signed download’s version or build differs from the advertised update.")
         case .recoveryRequired(let url): return "The update could not be restored automatically. The previous app is preserved at \(url.path)."
         case .invalidPayload(let reason): return reason
         }
@@ -87,8 +91,11 @@ enum NativeInstallError: Error, LocalizedError {
 }
 
 struct NativeAppInstaller: Sendable {
+    typealias PrepareReplacement = @Sendable () async throws -> Void
+
     func install(target: NativeInstallTarget, artifact: NativeUpdateArtifact,
-                 progress: @escaping @Sendable (NativeInstallProgress) -> Void) async throws -> NativeInstallResult {
+                 progress: @escaping @Sendable (NativeInstallProgress) -> Void,
+                 prepareReplacement: @escaping PrepareReplacement = {}) async throws -> NativeInstallResult {
         guard geteuid() != 0 else {
             throw NativeInstallError.invalidPayload("Privileged native installation is not supported. Use the vendor updater.")
         }
@@ -115,8 +122,12 @@ struct NativeAppInstaller: Sendable {
                 bundleIdentifier: target.bundleIdentifier, installedVersion: target.version, installedBuild: target.build,
                 expectedVersion: artifact.version, expectedBuild: artifact.build)
             try NativeAppValidation.validateTree(candidate)
-            try NativeAppValidation.checkVersions(request, installed: NativeAppValidation.metadata(request.targetURL), candidate: NativeAppValidation.metadata(candidate))
-            try NativeAppValidation.checkSignature(candidate, installed: request.targetURL)
+            let requiresReplacement = try NativeAppValidation.requiresReplacement(
+                request, installed: NativeAppValidation.metadata(request.targetURL), candidate: NativeAppValidation.metadata(candidate)
+            )
+            try Task.checkCancellation()
+            guard requiresReplacement else { return .alreadyCurrent }
+            try await prepareReplacement()
             try Task.checkCancellation()
             progress(NativeInstallProgress(phase: .installing, fraction: 0))
             let result = try NativeAppInstallTransaction().install(request)

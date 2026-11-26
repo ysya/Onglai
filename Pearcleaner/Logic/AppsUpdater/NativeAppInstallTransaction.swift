@@ -91,10 +91,10 @@ struct NativeAppInstallTransaction {
         }
         do {
             try remove(stage)
-            return NativeInstallResult()
+            return .installed()
         } catch {
             preserveStage = true
-            return NativeInstallResult(recoveryURL: staged)
+            return .installed(recoveryURL: staged)
         }
     }
 

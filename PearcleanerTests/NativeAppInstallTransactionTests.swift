@@ -18,7 +18,7 @@ final class NativeAppInstallTransactionTests: XCTestCase {
         let fixture = try NativeTransactionFixture()
         defer { fixture.clean() }
         let result = try NativeAppInstallTransaction(signatureCheck: { _, _ in }, runningCheck: { _ in false }).install(fixture.request)
-        XCTAssertNil(result.recoveryURL)
+        guard case .installed(nil) = result else { return XCTFail("Expected installation without recovery") }
         XCTAssertEqual(try String(contentsOf: fixture.target.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8), "new")
     }
 
@@ -47,7 +47,7 @@ final class NativeAppInstallTransactionTests: XCTestCase {
         }, runningCheck: { _ in false })
         let result = try transaction.install(fixture.request)
         XCTAssertTrue(createdSibling)
-        XCTAssertNil(result.recoveryURL)
+        guard case .installed(nil) = result else { return XCTFail("Expected installation without recovery") }
         XCTAssertEqual(try String(contentsOf: fixture.target.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8), "new")
     }
 
@@ -127,7 +127,8 @@ final class NativeAppInstallTransactionTests: XCTestCase {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
         })
         let result = try transaction.install(fixture.request)
-        let recovery = try XCTUnwrap(result.recoveryURL)
+        guard case .installed(let recoveryURL) = result else { return XCTFail("Expected installation with recovery") }
+        let recovery = try XCTUnwrap(recoveryURL)
         XCTAssertEqual(try String(contentsOf: recovery.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8), "old")
         XCTAssertEqual(try String(contentsOf: fixture.target.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8), "new")
     }
@@ -174,6 +175,41 @@ final class NativeAppInstallTransactionTests: XCTestCase {
         let equal = NativeInstallRequest(targetURL: fixture.target, candidateURL: fixture.candidate, bundleIdentifier: "org.example.native-fixture", installedVersion: "1.0", installedBuild: "1", expectedVersion: "1.0", expectedBuild: "1")
         XCTAssertThrowsError(try transaction.install(equal))
         XCTAssertEqual(try String(contentsOf: fixture.target.appendingPathComponent("Contents/Resources/marker"), encoding: .utf8), "old")
+    }
+
+    func testDownloadedBuildCanBeCurrentOnlyAfterVerifyingThePublisher() throws {
+        let fixture = try NativeTransactionFixture()
+        defer { fixture.clean() }
+        let installed = try NativeAppValidation.metadata(fixture.target)
+        let request = fixture.request
+        var signatureChecked = false
+        let requiresReplacement = try NativeAppValidation.requiresReplacement(request, installed: installed, candidate: installed) { candidate, target in
+            XCTAssertEqual(candidate, request.candidateURL)
+            XCTAssertEqual(target, request.targetURL)
+            signatureChecked = true
+        }
+        XCTAssertTrue(signatureChecked)
+        XCTAssertFalse(requiresReplacement)
+        XCTAssertThrowsError(try NativeAppValidation.requiresReplacement(request, installed: installed, candidate: installed))
+        XCTAssertThrowsError(try NativeAppValidation.checkVersions(request, installed: installed, candidate: installed))
+    }
+
+    func testDifferentBuildRequiresTheExactAdvertisedRelease() throws {
+        let fixture = try NativeTransactionFixture()
+        defer { fixture.clean() }
+        let installed = try NativeAppValidation.metadata(fixture.target)
+        let request = fixture.request
+        let candidate = try NativeAppValidation.metadata(fixture.candidate)
+        XCTAssertTrue(try NativeAppValidation.requiresReplacement(request, installed: installed, candidate: candidate) { _, _ in })
+
+        let wrongBuild = NativeAppValidation.Metadata(identifier: candidate.identifier, version: candidate.version, build: "3")
+        XCTAssertThrowsError(try NativeAppValidation.requiresReplacement(request, installed: installed, candidate: wrongBuild) { _, _ in }) { error in
+            guard case NativeInstallError.releaseMismatch = error else { return XCTFail("Expected a release mismatch") }
+        }
+        let differentApp = NativeAppValidation.Metadata(identifier: "org.example.different", version: installed.version, build: installed.build)
+        XCTAssertThrowsError(try NativeAppValidation.requiresReplacement(request, installed: installed, candidate: differentApp) { _, _ in
+            XCTFail("An unrelated bundle must be rejected before checking its signature")
+        })
     }
 }
 

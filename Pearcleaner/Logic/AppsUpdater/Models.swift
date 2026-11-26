@@ -59,6 +59,7 @@ enum UpdateStatus: Equatable {
     case installing
     case verifying
     case completed
+    case manualInstallation(String)
     case failed(String)
 
     static func == (lhs: UpdateStatus, rhs: UpdateStatus) -> Bool {
@@ -71,7 +72,8 @@ enum UpdateStatus: Equatable {
              (.verifying, .verifying),
              (.completed, .completed):
             return true
-        case (.failed(let lhsMsg), .failed(let rhsMsg)):
+        case (.failed(let lhsMsg), .failed(let rhsMsg)),
+             (.manualInstallation(let lhsMsg), .manualInstallation(let rhsMsg)):
             return lhsMsg == rhsMsg
         default:
             return false

@@ -1059,9 +1059,11 @@ class UpdateManager: ObservableObject {
     }
 
     func canStartUpdate(_ app: UpdateableApp) -> Bool {
-        if app.status == .idle { return true }
-        if app.source.isExternalUpdate, case .failed = app.status { return true }
-        return false
+        switch app.status {
+        case .idle: return true
+        case .failed, .manualInstallation: return app.source.isExternalUpdate
+        default: return false
+        }
     }
 
     func updateApp(_ app: UpdateableApp) async {
@@ -1257,32 +1259,69 @@ class UpdateManager: ObservableObject {
             }, onCancel: {
                 UpdateQueue.shared.cancelOperation(for: target.bundleIdentifier, appURL: target.url)
             })
-            if let recoveryURL = result.recoveryURL {
-                GlobalConsoleManager.shared.appendOutput("Previous app retained at \(recoveryURL.path)\n", source: CurrentPage.updater.title)
+            switch result {
+            case .installed(let recoveryURL):
+                if let recoveryURL {
+                    GlobalConsoleManager.shared.appendOutput("Previous app retained at \(recoveryURL.path)\n", source: CurrentPage.updater.title)
+                }
+                await refreshApps(updatedApp: app.appInfo)
+            case .alreadyCurrent:
+                await markDownloadedReleaseCurrent(for: app, artifact: artifact)
             }
-            await refreshApps(updatedApp: app.appInfo)
         } catch is CancellationError {
             updateStatus(for: app, status: .idle, progress: 0)
         } catch NativeInstallError.cancelled {
             updateStatus(for: app, status: .idle, progress: 0)
         } catch NativeInstallError.authorizationRequired {
             let message = String(localized: "This app cannot be replaced with your current permissions. Open App to use its updater or download the update from the publisher.")
-            fallBackToVendorActions(for: app, message: message)
+            fallBackToVendorActions(for: app, status: .manualInstallation(message), allDownloads: true)
+        } catch NativeInstallError.manualInstallerRequired {
+            fallBackToVendorActions(for: app, status: .manualInstallation(NativeInstallError.manualInstallerRequired.localizedDescription))
+        } catch NativeInstallError.releaseMismatch {
+            fallBackToVendorActions(for: app, status: .manualInstallation(NativeInstallError.releaseMismatch.localizedDescription))
         } catch NativeInstallError.invalidPayload(let reason) {
             let action = String(localized: "Open App to use its updater or download the update from the publisher.")
-            fallBackToVendorActions(for: app, message: "\(reason)\n\(action)")
+            fallBackToVendorActions(for: app, status: .failed("\(reason)\n\(action)"))
         } catch {
             updateStatus(for: app, status: .failed(error.localizedDescription), progress: 0)
             GlobalConsoleManager.shared.appendOutput("✗ Failed to update \(app.appInfo.appName): \(error.localizedDescription)\n", source: CurrentPage.updater.title)
         }
     }
 
-    private func fallBackToVendorActions(for app: UpdateableApp, message: String) {
+    private func markDownloadedReleaseCurrent(for app: UpdateableApp, artifact: NativeUpdateArtifact) async {
+        let path = app.appInfo.path.standardizedFileURL
+        for source in UpdateSource.allCases where source.isExternalUpdate {
+            guard let apps = updatesBySource[source] else { continue }
+            let remaining = apps.filter { !matchesInstallTarget($0, app) || $0.nativeArtifact != artifact }
+            guard remaining.count != apps.count else { continue }
+            updatesBySource[source] = remaining
+            if !remaining.contains(where: { $0.appInfo.path.standardizedFileURL == path }) {
+                recordSourceEvidence(UpdateCheckResults(currentAppPaths: [path]), source: source, replacingAppPaths: [path])
+            }
+        }
+        GlobalConsoleManager.shared.appendOutput(
+            "The signed download matches the installed version and build of \(app.appInfo.appName).\n",
+            source: CurrentPage.updater.title
+        )
+        await rebuildDerivedResults(apps: AppState.shared.sortedApps)
+    }
+
+    private func matchesInstallTarget(_ candidate: UpdateableApp, _ app: UpdateableApp) -> Bool {
+        candidate.appInfo.path.standardizedFileURL == app.appInfo.path.standardizedFileURL &&
+        candidate.appInfo.bundleIdentifier == app.appInfo.bundleIdentifier &&
+        candidate.appInfo.appVersion == app.appInfo.appVersion &&
+        candidate.appInfo.appBuildNumber == app.appInfo.appBuildNumber
+    }
+
+    private func fallBackToVendorActions(for app: UpdateableApp, status: UpdateStatus, allDownloads: Bool = false) {
         for source in UpdateSource.allCases where source.isExternalUpdate {
             guard var apps = updatesBySource[source] else { continue }
-            for index in apps.indices where apps[index].appInfo.path.standardizedFileURL == app.appInfo.path.standardizedFileURL {
+            for index in apps.indices {
+                let candidate = apps[index]
+                guard let artifact = candidate.nativeArtifact, matchesInstallTarget(candidate, app),
+                      allDownloads || artifact == app.nativeArtifact else { continue }
                 apps[index].nativeArtifact = nil
-                apps[index].status = .failed(message)
+                apps[index].status = status
                 apps[index].progress = 0
                 apps[index].isSelectedForUpdate = false
             }
