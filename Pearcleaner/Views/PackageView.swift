@@ -120,51 +120,17 @@ struct PackageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+            UtilitySearchField(prompt: "Search Package Receipts", text: $searchText)
+                .padding(.top, 5)
 
-                TextField("Search...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-            .controlGroup(Capsule(style: .continuous), level: .primary)
-            .padding(.top, 5)
-
-            if isLoading && packages.isEmpty {
-                VStack(alignment: .center, spacing: 10) {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.5)
-                    Text("Loading packages...")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else if filteredPackages.isEmpty && !isLoading {
-                VStack(alignment: .center) {
-                    Spacer()
-                    Text("No packages found")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+            if isLoading && filteredPackages.isEmpty {
+                UtilityPageStatus(title: "Loading packages...")
+            } else if packages.isEmpty {
+                UtilityPageStatus(title: "No package receipts", systemImage: "shippingbox",
+                                  action: ("Refresh", refreshPackages))
+            } else if filteredPackages.isEmpty {
+                UtilityPageStatus(title: "No matching packages", systemImage: "magnifyingglass",
+                                  action: ("Clear Search", { searchText = "" }))
             } else {
                 
                 // Stats header
@@ -869,27 +835,24 @@ struct PackageRowView: View {
                         .disabled(isPerformingAction)
                         .help(isExpanded ? "Hide details" : "Show file details")
 
-                        Divider().frame(height: 10)
-
-                        Button("Forget") {
-                            onForget()
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.mini)
-                        .foregroundStyle(.orange)
-                        .disabled(isPerformingAction)
-                        .help("Remove package from system records (does not delete files)")
-
-                        Divider().frame(height: 10)
-
-                        Button("Uninstall") {
+                        Button("Review Files…") {
                             onUninstall()
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .foregroundStyle(.red)
                         .disabled(isPerformingAction)
-                        .help("Completely remove package: delete all files, receipts, and forget package")
+
+                        Menu {
+                            Button("Forget Receipt", role: .destructive, action: onForget)
+                        } label: {
+                            Label("Receipt Actions", systemImage: "ellipsis.circle")
+                                .labelStyle(.iconOnly)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .disabled(isPerformingAction)
+                        .help("Remove package from system records (does not delete files)")
                     }
 
                     if isPerformingAction {

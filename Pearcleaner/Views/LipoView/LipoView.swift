@@ -142,40 +142,14 @@ struct LipoView: View {
                 VStack(alignment: .leading, spacing: 0) {
 
                     // Add this section back - the main app list content
-                    // Search bar
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    UtilitySearchField(prompt: "Search Apps", text: $searchText)
+                        .padding(.top, 5)
 
-                        TextField("Search...", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                        if !searchText.isEmpty {
-                            Button {
-                                searchText = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-                    .controlGroup(Capsule(style: .continuous), level: .primary)
-                    .padding(.top, 5)
-
-                    if universalApps.isEmpty {
-                        VStack {
-                            Spacer()
-                            Text("No apps available for thinning")
-                                .font(.title2)
-                                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
+                    if universalApps.isEmpty && !searchText.isEmpty {
+                        UtilityPageStatus(title: "No matching apps", systemImage: "magnifyingglass",
+                                          action: ("Clear Search", { searchText = "" }))
+                    } else if universalApps.isEmpty {
+                        UtilityPageStatus(title: "No apps available for thinning", systemImage: "scissors")
                     } else {
 
                         // Stats header

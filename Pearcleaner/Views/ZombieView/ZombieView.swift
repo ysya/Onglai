@@ -37,6 +37,7 @@ struct ZombieView: View {
     @State private var lastRefreshDate: Date?
     @State private var isRefreshing: Bool = false
     @State private var currentSearcher: ReversePathsSearcher?
+    @State private var scanWasStopped = false
 
     // Categorized files grouped by category
     var categorizedZombieFiles: [GroupedFiles] {
@@ -73,33 +74,11 @@ struct ZombieView: View {
             ZStack {
                     VStack(spacing: 0) {
 
-                        // Search bar
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                            TextField("Search...", text: $searchZ)
-                                .onChange(of: searchZ) { newValue in
-                                    updateMemoizedFiles(for: newValue, selectedSort: selectedSort)
-                                }
-                                .textFieldStyle(.plain)
-                                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                            if !searchZ.isEmpty {
-                                Button {
-                                    searchZ = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                }
-                                .buttonStyle(.plain)
+                        UtilitySearchField(prompt: "Filter Leftover Files", text: $searchZ)
+                            .onChange(of: searchZ) { newValue in
+                                updateMemoizedFiles(for: newValue, selectedSort: selectedSort)
                             }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-                        .controlGroup(Capsule(style: .continuous), level: .primary)
-                        .padding(.top, 5)
+                            .padding(.top, 5)
 
                         // Stats header
                         HStack {
@@ -113,6 +92,10 @@ struct ZombieView: View {
                                     .font(.caption)
                                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                                 ProgressView().controlSize(.mini)
+                            } else if scanWasStopped {
+                                Label("Partial Results", systemImage: "stop.circle")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
                             }
 
                             Spacer()
@@ -128,18 +111,17 @@ struct ZombieView: View {
                         }
                         .padding(.vertical)
 
-                        if memoizedFiles.isEmpty && !appState.showProgress {
-                            VStack {
-                                Spacer()
-                                Text("No orphaned files found")
-                                    .font(.title2)
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                Text("Sentinel Monitor found no orphaned files")
-                                    .font(.callout)
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                Spacer()
+                        if memoizedFiles.isEmpty {
+                            if appState.showProgress {
+                                UtilityPageStatus(title: "Scanning for Leftover Files", action: ("Cancel Scan", stopSearch))
+                            } else if !searchZ.isEmpty && !appState.zombieFile.fileSize.isEmpty {
+                                UtilityPageStatus(title: "No matching files", systemImage: "magnifyingglass",
+                                                  action: ("Clear Search", { searchZ = "" }))
+                            } else if scanWasStopped {
+                                UtilityPageStatus(title: "Scan canceled", systemImage: "stop.circle", action: ("Scan Again", startSearch))
+                            } else {
+                                UtilityPageStatus(title: "No orphaned files found", systemImage: "doc.text.magnifyingglass")
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             ScrollView() {
                                 if viewMode == .simple {
@@ -254,7 +236,7 @@ struct ZombieView: View {
                                         handleUninstallAction()
                                     } label: {
                                         Label {
-                                            Text("Delete \(selectedZombieItemsLocal.count) Selected")
+                                            Text("Move \(selectedZombieItemsLocal.count) Items to Trash")
                                         } icon: {
                                             Image(systemName: "trash")
                                         }
@@ -411,6 +393,7 @@ struct ZombieView: View {
     private func startSearch() {
         GlobalConsoleManager.shared.appendOutput("Starting orphan file search...\n", source: CurrentPage.orphans.title)
         updateOnMain {
+            scanWasStopped = false
             appState.zombieFile = .empty
             appState.showProgress = true
             selectedZombieItemsLocal.removeAll()
@@ -420,6 +403,7 @@ struct ZombieView: View {
 
             searcher.reversePathsSearch {
                 updateOnMain {
+                    guard self.currentSearcher === searcher else { return }
                     self.lastRefreshDate = Date()
                     self.currentSearcher = nil
                     GlobalConsoleManager.shared.appendOutput("✓ Completed orphan file search\n", source: CurrentPage.orphans.title)
@@ -432,6 +416,7 @@ struct ZombieView: View {
         GlobalConsoleManager.shared.appendOutput("Stopping orphan search...\n", source: CurrentPage.orphans.title)
         currentSearcher?.stop()
         updateOnMain {
+            scanWasStopped = true
             appState.showProgress = false
             currentSearcher = nil
             GlobalConsoleManager.shared.appendOutput("✓ Orphan search stopped\n", source: CurrentPage.orphans.title)

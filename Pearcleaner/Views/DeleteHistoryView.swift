@@ -20,7 +20,7 @@ struct DeleteHistoryView: View {
 
     var body: some View {
         StandardSheetView(
-            title: "Delete History",
+            title: "Restore Files",
             width: 700,
             height: 500,
             onClose: {
@@ -33,17 +33,7 @@ struct DeleteHistoryView: View {
                         .font(.callout)
                 }
                 if historyManager.history.isEmpty {
-                    VStack {
-                        Spacer()
-                        Text("No delete history")
-                            .font(.title2)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        Text("Deleted files will appear here")
-                            .font(.caption)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
+                    UtilityPageStatus(title: "No items to restore", systemImage: "clock.arrow.circlepath")
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         // Info text

@@ -37,6 +37,7 @@ struct FileSearchView: View {
     @State private var searchElapsedTime: TimeInterval = 0
     @State private var elapsedTimeUpdateTimer: Timer?
     @State private var hasSearched: Bool = false
+    @State private var searchWasStopped = false
     @State private var filterText: String = ""
     @State private var editingItemId: UUID?
     @State private var editingText: String = ""
@@ -59,105 +60,121 @@ struct FileSearchView: View {
         }
     }
 
+    private var searchScope: some View {
+        HStack {
+            // Volume selector
+            Menu {
+                Button("Startup Disk") {
+                    selectedVolume = "/"
+                    selectedVolumeName = "Startup Disk"
+                }
+
+                if !appState.volumeInfos.isEmpty {
+                    Divider()
+                    ForEach(appState.volumeInfos) { volume in
+                        Button(volume.name) {
+                            selectedVolume = volume.path
+                            selectedVolumeName = volume.name
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Choose Folder...") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.allowsMultipleSelection = false
+                    panel.prompt = "Choose"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        selectedVolume = url.path
+                        selectedVolumeName = url.lastPathComponent
+                    }
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "externaldrive")
+                    Text(selectedVolume == "/" ? String(localized: "Startup Disk") : selectedVolumeName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 168)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(ControlGroupButtonStyle(
+                foregroundColor: ThemeColors.shared(for: colorScheme).accent,
+                shape: Capsule(style: .continuous),
+                level: .primary,
+                skipControlGroup: true
+            ))
+
+            // Search type selector
+            Menu {
+                ForEach(SearchType.allCases, id: \.self) { type in
+                    Button(String(localized: String.LocalizationValue(type.rawValue))) {
+                        searchType = type
+                        includeSubfolders = type != .filesOnly
+                    }
+                }
+            } label: {
+                HStack {
+                    Image(systemName: searchType == .filesOnly ? "doc" : searchType == .foldersOnly ? "folder" : "doc.on.doc")
+                    Text(String(localized: String.LocalizationValue(searchType.rawValue)))
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(ControlGroupButtonStyle(
+                foregroundColor: ThemeColors.shared(for: colorScheme).primaryText,
+                shape: Capsule(style: .continuous),
+                level: .primary,
+                skipControlGroup: true
+            ))
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var searchOptions: some View {
+        HStack {
+            // Search options
+            Toggle("Include subfolders", isOn: $includeSubfolders)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .disabled(searchType == .filesOnly)
+
+            Toggle("Exclude system folders", isOn: $excludeSystemFolders)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+
+            Toggle("Include hidden files", isOn: $includeHiddenFiles)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+
+            Toggle("Case sensitive", isOn: $caseSensitive)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
             // Filter controls
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    // Volume selector
-                    Menu {
-                        Button("Startup Disk") {
-                            selectedVolume = "/"
-                            selectedVolumeName = "Startup Disk"
-                        }
-
-                        if !appState.volumeInfos.isEmpty {
-                            Divider()
-                            ForEach(appState.volumeInfos) { volume in
-                                Button(volume.name) {
-                                    selectedVolume = volume.path
-                                    selectedVolumeName = volume.name
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        Button("Choose Folder...") {
-                            let panel = NSOpenPanel()
-                            panel.canChooseFiles = false
-                            panel.canChooseDirectories = true
-                            panel.allowsMultipleSelection = false
-                            panel.prompt = "Choose"
-                            if panel.runModal() == .OK, let url = panel.url {
-                                selectedVolume = url.path
-                                selectedVolumeName = url.lastPathComponent
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "externaldrive")
-                            Text(selectedVolumeName)
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
-                        }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) {
+                        searchScope
+                        searchOptions
                     }
-                    .buttonStyle(ControlGroupButtonStyle(
-                        foregroundColor: ThemeColors.shared(for: colorScheme).accent,
-                        shape: Capsule(style: .continuous),
-                        level: .primary,
-                        skipControlGroup: true
-                    ))
-
-                    // Search type selector
-                    Menu {
-                        ForEach(SearchType.allCases, id: \.self) { type in
-                            Button(type.rawValue) {
-                                searchType = type
-                                // Disable subfolders option when files only, enable for others
-                                if type == .filesOnly {
-                                    includeSubfolders = false
-                                } else {
-                                    includeSubfolders = true
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: searchType == .filesOnly ? "doc" : searchType == .foldersOnly ? "folder" : "doc.on.doc")
-                            Text(searchType.rawValue)
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
-                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        searchScope
+                        searchOptions
                     }
-                    .buttonStyle(ControlGroupButtonStyle(
-                        foregroundColor: ThemeColors.shared(for: colorScheme).primaryText,
-                        shape: Capsule(style: .continuous),
-                        level: .primary,
-                        skipControlGroup: true
-                    ))
-
-                    // Search options
-                    Toggle("Include subfolders", isOn: $includeSubfolders)
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-                        .disabled(searchType == .filesOnly)
-
-                    Toggle("Exclude system folders", isOn: $excludeSystemFolders)
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-
-                    Toggle("Include hidden files", isOn: $includeHiddenFiles)
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-
-                    Toggle("Case sensitive", isOn: $caseSensitive)
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Active filters
                 if !activeFilters.isEmpty {
@@ -237,6 +254,12 @@ struct FileSearchView: View {
 
                     Spacer()
 
+                    if searchWasStopped {
+                        Label("Partial Results", systemImage: "stop.circle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
                     // Elapsed time - trailing aligned, 200 width
                     if searchStartTime != nil {
                         Text("Elapsed Time: \(formatElapsedTime(searchElapsedTime))")
@@ -254,27 +277,19 @@ struct FileSearchView: View {
             }
 
             // Results table
-            if results.isEmpty && !isSearching {
-                VStack {
-                    Spacer()
-                    if hasSearched {
-                        Text("No results")
-                            .font(.title2)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        Text("Try adjusting your filters")
-                            .font(.callout)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    } else {
-                        Text("Ready to search")
-                            .font(.title2)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        Text("Add filters and click Play to find files")
-                            .font(.callout)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    Spacer()
+            if results.isEmpty && isSearching {
+                UtilityPageStatus(title: "Searching...", action: ("Stop Search", stopSearch))
+            } else if results.isEmpty {
+                if searchWasStopped && hasSearched {
+                    UtilityPageStatus(title: "Search Stopped", systemImage: "stop.circle",
+                                      action: ("Search Again", startSearch))
+                } else if hasSearched {
+                    UtilityPageStatus(title: "No results", systemImage: "magnifyingglass",
+                                      detail: "Try adjusting your filters")
+                } else {
+                    UtilityPageStatus(title: "Ready to search", systemImage: "magnifyingglass",
+                                      detail: "Choose a location, set your filters, and click Search.")
                 }
-                .frame(maxWidth: .infinity)
             } else {
                 Table(sortedResults, selection: $selectedResults, sortOrder: $sortOrder) {
                         TableColumn("") { result in
@@ -469,9 +484,6 @@ struct FileSearchView: View {
                             .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
                             .font(.title2)
                             .fontWeight(.bold)
-                        Text("Search for files and folders with advanced filters")
-                            .font(.callout)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                     }
 
                 }
@@ -526,14 +538,15 @@ struct FileSearchView: View {
                     results.removeAll()
                     selectedResults.removeAll()
                     hasSearched = false
+                    searchWasStopped = false
                     searchStartTime = nil
                     searchElapsedTime = 0
                     deletedItemsCache.removeAll()
                     activeFilters.removeAll()
                 } label: {
-                    Label("Clear", systemImage: "trash")
+                    Label("Reset Search", systemImage: "xmark.circle")
                 }
-                .disabled(results.isEmpty)
+                .disabled(isSearching || (results.isEmpty && activeFilters.isEmpty && !hasSearched))
 
                 if isSearching {
                     Button {
@@ -622,6 +635,7 @@ struct FileSearchView: View {
         GlobalConsoleManager.shared.appendOutput("Starting file search in \(selectedVolumeName)...\n", source: CurrentPage.fileSearch.title)
         isSearching = true
         hasSearched = true
+        searchWasStopped = false
         results.removeAll()
         selectedResults.removeAll()
 
@@ -649,16 +663,19 @@ struct FileSearchView: View {
             searchType: searchType,
             excludeSystemFolders: excludeSystemFolders,
             onBatchFound: { batch in
+                guard currentSearcher === searcher else { return }
                 results.append(contentsOf: batch)
             },
             completion: {
-                isSearching = false
-                currentSearcher = nil
-                GlobalConsoleManager.shared.appendOutput("✓ File search completed - found \(results.count) result(s)\n", source: CurrentPage.fileSearch.title)
+                updateOnMain {
+                    guard currentSearcher === searcher else { return }
+                    isSearching = false
+                    currentSearcher = nil
+                    GlobalConsoleManager.shared.appendOutput("✓ File search completed - found \(results.count) result(s)\n", source: CurrentPage.fileSearch.title)
 
-                // Stop the timer but keep the final elapsed time
-                self.elapsedTimeUpdateTimer?.invalidate()
-                self.elapsedTimeUpdateTimer = nil
+                    elapsedTimeUpdateTimer?.invalidate()
+                    elapsedTimeUpdateTimer = nil
+                }
             }
         )
     }
@@ -666,6 +683,7 @@ struct FileSearchView: View {
     private func stopSearch() {
         GlobalConsoleManager.shared.appendOutput("Stopping file search...\n", source: CurrentPage.fileSearch.title)
         currentSearcher?.stop()
+        searchWasStopped = true
         isSearching = false
         currentSearcher = nil
         GlobalConsoleManager.shared.appendOutput("✓ File search stopped\n", source: CurrentPage.fileSearch.title)

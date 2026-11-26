@@ -56,29 +56,15 @@ struct FilesView: View {
         let displaySizeTotal = formatByte(size: appState.appInfo.totalSize).human
 
         VStack(alignment: .center) {
+            appFilesHeader
+
             if appState.isScanningApp {
-                VStack(spacing: 16) {
-                    Spacer()
-                    ProgressView()
-                    Text(appState.appScanStage)
-                    Text("\(appState.appScanFoundCount) items found")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("Cancel Scan") { appState.cancelAppScan() }
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.all)
-//                .transition(.opacity)
-//                .animation(.none, value: appState.showProgress)
+                UtilityPageStatus(title: LocalizedStringKey(appState.appScanStage),
+                                  detail: "\(appState.appScanFoundCount) items found",
+                                  action: ("Cancel Scan", appState.cancelAppScan))
             } else if appState.appScanCanceled {
-                VStack(spacing: 12) {
-                    Spacer()
-                    Label("Scan canceled", systemImage: "stop.circle")
-                    Button("Scan Again") { refreshFiles() }
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                UtilityPageStatus(title: "Scan canceled", systemImage: "stop.circle",
+                                  action: ("Scan Again", refreshFiles))
             } else {
                 if permissionManager.shouldShowPermissionWarning || !appState.appScanUnreadablePaths.isEmpty {
                     scanCoverageNotice
@@ -245,14 +231,53 @@ struct FilesView: View {
         showAppInFiles(appInfo: appState.appInfo, appState: appState, locations: locations)
     }
 
+    @ViewBuilder
+    private var appFilesHeader: some View {
+        let app = appState.appInfo
+        if !app.appName.isEmpty {
+            HStack(spacing: 12) {
+                if let icon = app.appIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 36, height: 36)
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: app.appName)
+                        .font(.title3.weight(.semibold))
+                    Text(verbatim: app.uninstallBundleURL.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .help(app.uninstallBundleURL.path)
+                }
+                Spacer(minLength: 0)
+                if !app.appVersion.isEmpty {
+                    Text(verbatim: app.appVersion)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+        }
+    }
+
     private var scanCoverageNotice: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Scan may be incomplete", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
-            Text("Some locations could not be read. Grant Full Disk Access, then scan again.")
-                .font(.caption)
+            Text(permissionManager.shouldShowPermissionWarning
+                 ? "Some locations could not be read. Grant Full Disk Access, then scan again."
+                 : "Some locations could not be read during this scan.")
+                .font(.callout)
             HStack {
-                Button("Open Full Disk Access") { permissionManager.openFullDiskAccessSettings() }
+                if permissionManager.shouldShowPermissionWarning {
+                    Button("Open Full Disk Access") { permissionManager.openFullDiskAccessSettings() }
+                }
                 Button("Scan Again") { refreshFiles() }
             }
             if !appState.appScanUnreadablePaths.isEmpty {
@@ -270,7 +295,9 @@ struct FilesView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(12)
+        .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+        .padding(.horizontal, 20)
         .disabled(appState.isDeletingFiles)
     }
 

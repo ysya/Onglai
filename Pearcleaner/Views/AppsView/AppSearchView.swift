@@ -27,20 +27,11 @@ struct AppSearchView: View {
 
         VStack(alignment: .center, spacing: 0) {
             if appState.sortedApps.isEmpty {
-                VStack {
-                    Spacer()
-                    if appState.isLoadingApps {
-                        ProgressView()
-                        Text("Loading applications…")
-                            .font(.callout)
-                    } else {
-                        Text("No apps found")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                            .font(.callout)
-                    }
-                    Spacer()
+                if appState.isLoadingApps {
+                    UtilityPageStatus(title: "Loading applications…")
+                } else {
+                    UtilityPageStatus(title: "No apps found", systemImage: "macwindow")
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
 
                 SearchBarSidebar(search: $appState.appSearchText)
@@ -52,15 +43,11 @@ struct AppSearchView: View {
                         search: $appState.appSearchText, filteredApps: filteredApps, isGridMode: appState.isGridMode
                     )
                     .padding([.bottom, .horizontal], 5)
+                } else if !search.isEmpty {
+                    UtilityPageStatus(title: "No matching apps", systemImage: "magnifyingglass",
+                                      action: ("Clear Search", { appState.appSearchText = "" }))
                 } else {
-                    VStack {
-                        Spacer()
-                        Text("No results")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                            .font(.title2)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    UtilityPageStatus(title: "No apps found", systemImage: "macwindow")
                 }
 
 

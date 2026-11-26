@@ -60,6 +60,18 @@ struct SearchInstallSection: View {
         return false
     }
 
+    private var hasNoSearchMatches: Bool {
+        guard !searchQuery.isEmpty else { return false }
+        switch searchType {
+        case .installed:
+            return !brewManager.isLoadingPackages && !brewManager.installedByCategory.values.contains { packages in
+                packages.contains { matchesSearchQuery($0, query: searchQuery) }
+            }
+        case .available:
+            return !brewManager.isLoadingAvailablePackages && displayedResults.isEmpty
+        }
+    }
+
     private var displayedResults: [HomebrewSearchResult] {
         if searchType == .available {
             // Flat list for Available tab - all packages combined
@@ -131,28 +143,7 @@ struct SearchInstallSection: View {
     @ViewBuilder
     private var searchBar: some View {
         HStack(spacing: 12) {
-            // Search field
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                TextField("Search...", text: $searchQuery)
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                if !searchQuery.isEmpty {
-                    Button {
-                        searchQuery = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .controlGroup(Capsule(style: .continuous), level: .primary)
+            UtilitySearchField(prompt: "Search Homebrew Packages", text: $searchQuery)
 
             // Search type picker
             Picker("", selection: $searchType) {
@@ -217,21 +208,9 @@ struct SearchInstallSection: View {
                     // Results List (full width)
                     VStack(alignment: .leading, spacing: 0) {
                         // Results or loading state
-                        if ((searchType == .installed && brewManager.installedFormulae.isEmpty && brewManager.installedCasks.isEmpty) || (searchType == .available && displayedResults.isEmpty)) && !searchQuery.isEmpty {
-                            VStack(alignment: .center) {
-                                Spacer()
-                                Image(systemName: "exclamationmark.magnifyingglass")
-                                    .font(.system(size: 50))
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                Text("No results found")
-                                    .font(.title2)
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                Text("Try a different search term")
-                                    .font(.caption)
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity)
+                        if hasNoSearchMatches {
+                            UtilityPageStatus(title: "No matching packages", systemImage: "magnifyingglass",
+                                              action: ("Clear Search", { searchQuery = "" }))
                         } else {
                             ScrollView {
                                 LazyVStack(spacing: 8) {

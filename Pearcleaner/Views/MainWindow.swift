@@ -202,39 +202,10 @@ struct MainWindow: View {
 
                 // Page Selector
                 Menu {
-                    ForEach(CurrentPage.availablePages, id: \.self) { page in
-                        Button {
-                            // Change page immediately (no animation on toolbar icon)
-                            appState.currentPage = page
-
-                            // Hide tutorial when user interacts with menu
-                            if tutorialShown {
-                                tutorialShown = false
-                            }
-                        } label: {
-                            if page == .updater {
-                                HStack(spacing: 8) {
-                                    Image(systemName: page.icon)
-                                        .frame(width: 16)
-                                    if loadUpdatesOnStartup || updateManager.totalUpdateCount > 0 {
-                                        Text(page.title)
-                                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                            .badge(updateManager.totalUpdateCount)
-                                    } else {
-                                        Text(page.title)
-                                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                    }
-                                }
-                            } else {
-                                HStack(spacing: 8) {
-                                    Image(systemName: page.icon)
-                                        .frame(width: 16)
-                                    Text(page.title)
-                                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                                }
-                            }
-                        }
-                    }
+                    let available = Set(CurrentPage.availablePages)
+                    utilityMenuSection("App Tools", pages: [.applications, .updater, .orphans], available: available)
+                    utilityMenuSection("File Tools", pages: [.fileSearch, .lipo], available: available)
+                    utilityMenuSection("System & Development", pages: [.packages, .services, .plugins, .homebrew, .development], available: available)
                 } label: {
                     HStack {
                         Image(systemName: appState.currentPage.icon)
@@ -246,6 +217,7 @@ struct MainWindow: View {
                 .menuIndicator(.hidden)
                 .help("Switch utilities")
                 .accessibilityLabel("Switch utilities")
+                .accessibilityValue(appState.currentPage.title)
                 .disabled(appState.isDeletingFiles)
 
                 if tutorialShown {
@@ -310,6 +282,29 @@ struct MainWindow: View {
 
             }
 
+        }
+    }
+
+    @ViewBuilder
+    private func utilityMenuSection(_ title: LocalizedStringKey, pages: [CurrentPage], available: Set<CurrentPage>) -> some View {
+        let visiblePages = pages.filter { available.contains($0) }
+        if !visiblePages.isEmpty {
+            Section(title) {
+                ForEach(visiblePages) { page in
+                    Button {
+                        appState.currentPage = page
+                        tutorialShown = false
+                    } label: {
+                        let symbol = appState.currentPage == page ? "checkmark" : page.icon
+                        if page == .updater, loadUpdatesOnStartup || updateManager.totalUpdateCount > 0 {
+                            Label(page.title, systemImage: symbol)
+                                .badge(updateManager.totalUpdateCount)
+                        } else {
+                            Label(page.title, systemImage: symbol)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -509,12 +504,11 @@ struct MountedVolumeView: View {
 
                         Spacer()
                     }
-                } else {
-                    Text("Select an app to review its files, or drop an app here")
-                        .font(.caption)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                 }
-
+                Text("Select an app to review its files, or drop an app here")
+                    .font(.caption)
+                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+                    .multilineTextAlignment(.center)
 
             }
 

@@ -115,53 +115,15 @@ struct FileListView: View {
     var body: some View {
         VStack(spacing: 0) {
             if appState.appInfo.fileSize.keys.count == 0 && !appState.isBrewCleanupInProgress {
-                VStack {
-                    Spacer()
-                    Text(appState.externalMode ? "Sentinel Monitor found no other files to remove" : "There are no files to remove")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                UtilityPageStatus(title: appState.externalMode ? "Sentinel Monitor found no other files to remove" : "There are no files to remove",
+                                  systemImage: "checkmark.circle")
             } else if appState.isBrewCleanupInProgress && appState.appInfo.fileSize.keys.count == 0 {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Running homebrew cleanup")
-                            .font(.title2)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                UtilityPageStatus(title: "Running homebrew cleanup")
             } else {
                 VStack(alignment: .leading, spacing: 0) {
 
-                    // Search bar
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                        TextField("Search...", text: $appState.fileSearchText)
-                            .textFieldStyle(.plain)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                        if !searchText.isEmpty {
-                            Button {
-                                searchText = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-                    .controlGroup(Capsule(style: .continuous), level: .primary)
-                    .padding(.top, 5)
+                    UtilitySearchField(prompt: "Filter App Files", text: $appState.fileSearchText)
+                        .padding(.top, 5)
 
                     // Stats header
                     HStack {
@@ -262,6 +224,12 @@ struct FileListView: View {
                         }
                     }
                     .scrollIndicators(scrollIndicators ? .automatic : .never)
+                    .overlay {
+                        if !searchText.isEmpty && memoizedFiles.isEmpty {
+                            UtilityPageStatus(title: "No matching files", systemImage: "magnifyingglass",
+                                              action: ("Clear Search", { searchText = "" }))
+                        }
+                    }
                     .onAppear {
                         if lastRefreshDate == nil {
                             lastRefreshDate = Date()

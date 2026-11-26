@@ -1,6 +1,206 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Browse" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "瀏覽"}}}
+    },
+    "Auto Update" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "自動更新"}}}
+    },
+    "Maintenance" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "維護"}}}
+    },
+    "Searching..." : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "正在搜尋…"}}}
+    },
+    "Files & Folders" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "檔案與資料夾"}}}
+    },
+    "Files Only" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "僅檔案"}}}
+    },
+    "Folders Only" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "僅資料夾"}}}
+    },
+    "Clear Search" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "清除搜尋"}}}
+    },
+    "Search Package Receipts" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋套件收據"}}}
+    },
+    "Search Services" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋服務"}}}
+    },
+    "Search Plugins" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋外掛"}}}
+    },
+    "Search Developer Files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋開發工具檔案"}}}
+    },
+    "Search Apps" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋應用程式"}}}
+    },
+    "Filter App Files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "篩選 App 檔案"}}}
+    },
+    "Filter Leftover Files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "篩選殘留檔案"}}}
+    },
+    "Search Homebrew Packages" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋 Homebrew 套件"}}}
+    },
+    "No package receipts" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有套件收據"}}}
+    },
+    "No matching packages" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有符合的套件"}}}
+    },
+    "Reset Filters" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "重設篩選條件"}}}
+    },
+    "No matching apps" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有符合的應用程式"}}}
+    },
+    "No matching files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有符合的檔案"}}}
+    },
+    "No developer files found" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "找不到開發工具檔案"}}}
+    },
+    "App Tools" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式工具"}}}
+    },
+    "File Tools" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "檔案工具"}}}
+    },
+    "System & Development" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "系統與開發工具"}}}
+    },
+    "Some locations could not be read during this scan." : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "這次掃描有部分位置無法讀取。"}}}
+    },
+    "Partial Results" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "部分結果"}}}
+    },
+    "Scanning for Leftover Files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "正在掃描殘留檔案"}}}
+    },
+    "Move %lld Items to Trash" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "將 %lld 個項目移到垃圾桶"}}}
+    },
+    "Stop Search" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "停止搜尋"}}}
+    },
+    "Search Stopped" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋已停止"}}}
+    },
+    "Search Again" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "重新搜尋"}}}
+    },
+    "Choose a location, set your filters, and click Search." : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "選擇搜尋位置和篩選條件，再按一下「搜尋」。"}}}
+    },
+    "Homebrew Sections" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "Homebrew 分頁"}}}
+    },
+    "Open Homebrew Website" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟 Homebrew 網站"}}}
+    },
+    "Install Homebrew to manage its packages here." : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "安裝 Homebrew 後即可在此管理套件。"}}}
+    },
+    "Review Files…" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "檢視檔案…"}}}
+    },
+    "Forget Receipt" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "忘記收據"}}}
+    },
+    "Receipt Actions" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "收據操作"}}}
+    },
+    "Reset Search" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "重設搜尋"}}}
+    },
+    "Restore Files" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "還原檔案"}}}
+    },
+    "No items to restore" : {
+      "localizations" : {"zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有可還原的項目"}}}
+    },
+    "Install in Onglai" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在 Onglai 安裝" } } }
+    },
+    "Manual Update" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "手動更新" } } }
+    },
+    "Update Failed" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更新失敗" } } }
+    },
+    "Update Source" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更新來源" } } }
+    },
+    "Update Selected" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更新所選項目" } } }
+    },
+    "Include in Batch Update" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "加入批次更新" } } }
+    },
+    "Verifying Update…" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "正在驗證更新…" } } }
+    },
+    "%lld of %lld selected" : {
+      "localizations" : { "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "已選 %1$lld 項，共 %2$lld 項" } } }
+    },
+    "Verify and Update" : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "驗證並更新"
+          }
+        }
+      }
+    },
+    "The download contains a package installer. Use the publisher’s installer to update this app." : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載檔內含套件安裝器。請使用發行者提供的安裝器更新。"
+          }
+        }
+      }
+    },
+    "The signed download’s version or build differs from the advertised update." : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已簽署的下載檔與更新來源標示的版本或 build 不一致。"
+          }
+        }
+      }
+    },
+    "The application identity does not match the update." : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載檔的 App 識別碼與更新目標不符。"
+          }
+        }
+      }
+    },
+    "The installed app changed. Check for updates again." : {
+      "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安裝的 App 有變動。請重新檢查更新。"
+          }
+        }
+      }
+    },
     "The download server did not return an HTTP response." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -79891,7 +80091,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "水龍頭"
+            "value" : "Tap 來源"
           }
         },
         "zh-HK" : {

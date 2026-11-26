@@ -61,7 +61,9 @@ struct UpdateRowViewSidebar: View {
                         .foregroundStyle(app.isSelectedForUpdate ? ThemeColors.shared(for: colorScheme).accent : ThemeColors.shared(for: colorScheme).secondaryText)
                 }
                 .buttonStyle(.plain)
-                .help("Update All")
+                .help("Include in Batch Update")
+                .accessibilityLabel("Include in Batch Update")
+                .accessibilityAddTraits(app.isSelectedForUpdate ? .isSelected : [])
             } else {
                 sourceBadge
             }
@@ -131,11 +133,17 @@ struct UpdateRowViewSidebar: View {
                 .foregroundStyle(.orange)
                 .help(issue.message)
         } else if let app = item.primaryApp {
-            if app.source == .current || app.source == .managed || app.source == .unsupported {
+            if case .manualInstallation = app.status {
+                Text("Manual Update")
+                    .foregroundStyle(.orange)
+            } else if case .failed = app.status {
+                Text("Update Failed")
+                    .foregroundStyle(.red)
+            } else if app.source == .current || app.source == .managed || app.source == .unsupported {
                 Text(verbatim: app.appInfo.appVersion)
                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
             } else if let availableVersion = app.availableVersion {
-                versionText(installed: app.appInfo.appVersion, available: availableVersion, source: app.source)
+                versionText(for: app, available: availableVersion)
             } else {
                 Text(app.source.title)
                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
@@ -155,9 +163,15 @@ struct UpdateRowViewSidebar: View {
         }
     }
 
-    private func versionText(installed: String, available: String, source: UpdateSource) -> Text {
-        let installedVersion = source == .homebrew ? installed.stripBrewRevisionSuffix() : installed
-        let availableVersion = source == .homebrew ? available.stripBrewRevisionSuffix() : available
+    private func versionText(for app: UpdateableApp, available: String) -> Text {
+        let installed = app.appInfo.appVersion
+        let installedVersion = app.source == .homebrew ? installed.stripBrewRevisionSuffix() : installed
+        let availableVersion = app.source == .homebrew ? available.stripBrewRevisionSuffix() : available
+        if installedVersion == availableVersion, let localBuild = app.appInfo.appBuildNumber,
+           let remoteBuild = app.availableBuildNumber, localBuild != remoteBuild {
+            return Text(verbatim: "\(installedVersion) · \(localBuild) → \(remoteBuild)")
+                .foregroundColor(ThemeColors.shared(for: colorScheme).secondaryText)
+        }
         return Text(verbatim: installedVersion).foregroundColor(.orange)
             + Text(verbatim: " → ").foregroundColor(ThemeColors.shared(for: colorScheme).secondaryText)
             + Text(verbatim: availableVersion).foregroundColor(.green)

@@ -155,59 +155,20 @@ struct DaemonView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                TextField("Search...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-            .controlGroup(Capsule(style: .continuous), level: .primary)
-            .padding(.top, 5)
+            UtilitySearchField(prompt: "Search Services", text: $searchText)
+                .padding(.top, 5)
 
             if isLoading {
-                VStack(alignment: .center, spacing: 10) {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.5)
-                    Text("Loading launch services...")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                UtilityPageStatus(title: "Loading launch services...")
+            } else if launchItems.isEmpty {
+                UtilityPageStatus(title: "No launch services found", systemImage: "gearshape.2",
+                                  action: ("Refresh", refreshLaunchItems))
             } else if filteredItems.isEmpty {
-                VStack(alignment: .center) {
-                    Spacer()
-                    Image(systemName: selectedFilter.systemImage)
-                        .font(.system(size: 48))
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Text(launchItems.isEmpty ? "No launch services found" : "No items match the current filters")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    if !searchText.isEmpty {
-                        Text("Try adjusting your search or filters")
-                            .font(.caption)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+                UtilityPageStatus(title: "No items match the current filters", systemImage: "magnifyingglass",
+                                  action: ("Reset Filters", {
+                                      searchText = ""
+                                      selectedFilter = .all
+                                  }))
             } else {
                 
                 // Stats header

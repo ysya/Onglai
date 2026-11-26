@@ -41,64 +41,41 @@ struct HomebrewView: View {
     @State private var selectedPackageIsCask: Bool = false
     @AppStorage("settings.interface.animationEnabled") private var animationEnabled: Bool = true
 
+    private var sectionPicker: some View {
+        Picker("Homebrew Sections", selection: $selectedSection) {
+            ForEach(HomebrewViewSection.allCases, id: \.self) { section in
+                Label(String(localized: String.LocalizationValue(section.rawValue)), systemImage: section.icon)
+                    .tag(section)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if !HomebrewController.shared.isInstalled {
-                // Show message when Homebrew is not installed
-                VStack(spacing: 20) {
-                    Spacer()
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 60))
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                    Text("Homebrew Not Installed")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                    Text("Homebrew is not installed on your system. This feature requires Homebrew to manage packages.")
-                        .font(.callout)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-
-                    Button {
-                        if let url = URL(string: "https://brew.sh") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } label: {
-                        Text("Install Homebrew")
-                            .font(.callout)
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                UtilityPageStatus(title: "Homebrew Not Installed", systemImage: "mug",
+                                  detail: "Install Homebrew to manage its packages here.",
+                                  action: ("Open Homebrew Website", {
+                                      if let url = URL(string: "https://brew.sh") {
+                                          NSWorkspace.shared.open(url)
+                                      }
+                                  }))
             } else {
                 // Normal Homebrew view content
                 ZStack {
                     VStack(spacing: 0) {
-                        // Section Picker
-                        HStack {
-                            Spacer()
-                            Picker("", selection: $selectedSection) {
-                                ForEach(HomebrewViewSection.allCases, id: \.self) { section in
-                                    Label(section.rawValue, systemImage: section.icon)
-                                        .tag(section)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.segmented)
-                            .fixedSize()
-                            .disabled(isLoadingInitialData)
-                            .opacity(isLoadingInitialData ? 0.5 : 1.0)
-                            Spacer()
+                        ViewThatFits(in: .horizontal) {
+                            sectionPicker
+                                .pickerStyle(.segmented)
+                                .fixedSize()
+                            sectionPicker
+                                .pickerStyle(.menu)
                         }
+                        .labelsHidden()
+                        .disabled(isLoadingInitialData)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
                         .padding(.bottom, 5)
-
 
                         // Section Content
                         Group {

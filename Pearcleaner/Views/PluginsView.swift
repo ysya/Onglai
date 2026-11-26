@@ -118,51 +118,16 @@ struct PluginsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+            UtilitySearchField(prompt: "Search Plugins", text: $searchText)
+                .padding(.top, 5)
 
-                TextField("Search...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-            .controlGroup(Capsule(style: .continuous), level: .primary)
-            .padding(.top, 5)
-
-            if isLoading && allPlugins.isEmpty {
-                VStack(alignment: .center, spacing: 10) {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.5)
-                    Text("Loading plugins...")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else if allPlugins.isEmpty && !isLoading {
-                VStack(alignment: .center) {
-                    Spacer()
-                    Text("No plugins found")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
+            if isLoading && filteredPlugins.isEmpty {
+                UtilityPageStatus(title: "Loading plugins...")
+            } else if allPlugins.isEmpty {
+                UtilityPageStatus(title: "No plugins found", systemImage: "puzzlepiece",
+                                  action: ("Refresh", refreshPlugins))
+            } else if filteredPlugins.isEmpty {
+                UtilityPageStatus(title: "No items match the current filters", systemImage: "magnifyingglass")
             } else {
 
                 // Stats header

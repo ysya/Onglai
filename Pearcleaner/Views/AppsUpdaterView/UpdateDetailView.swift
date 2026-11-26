@@ -9,7 +9,8 @@ import SwiftUI
 import AlinFoundation
 
 struct UpdateDetailView: View {
-    let appId: UUID
+    let item: UpdaterListItem
+    @State private var selectedUpdateID: UUID?
     @EnvironmentObject var updateManager: UpdateManager
     @EnvironmentObject var brewManager: HomebrewManager
     @EnvironmentObject var appState: AppState
@@ -34,35 +35,12 @@ struct UpdateDetailView: View {
     // whole window's layout transaction whenever focus or state changed.
     @State private var renderedNotes: [String: AttributedString] = [:]
 
-    // Look up live app data from updateManager - this makes the view reactive to status changes
     private var app: UpdateableApp? {
-        updateManager.updatesBySource.values
-            .flatMap { $0 }
-            .first { $0.id == appId }
+        item.alternateApps.first { $0.id == selectedUpdateID } ?? item.primaryApp
     }
 
-    private var sourceColor: Color {
-        guard let app = app else { return .gray }
-        switch app.source {
-        case .homebrew:
-            return .green
-        case .appStore:
-            return .purple
-        case .sparkle:
-            return .orange
-        case .electron:
-            return .yellow
-        case .official:
-            return .blue
-        case .catalog:
-            return .orange
-        case .managed:
-            return .blue
-        case .unsupported:
-            return .gray
-        case .current:
-            return .green
-        }
+    private var sourceOptions: [UpdateableApp] {
+        [item.primaryApp].compactMap { $0 } + item.alternateApps
     }
 
     private var isNonPrimaryRegion: Bool {
@@ -124,107 +102,8 @@ struct UpdateDetailView: View {
     @ViewBuilder
     private func contentView(for app: UpdateableApp) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Header: App icon, name, version, action buttons
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 16) {
-                    if let appIcon = app.appInfo.appIcon {
-                        Image(nsImage: appIcon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 80, height: 80)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Text(app.appInfo.appName)
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                            // Pre-release indicator (Sparkle only)
-                            if app.source == .sparkle && app.isPreRelease {
-                                if #available(macOS 14.0, *) {
-                                    Image(systemName: "flask.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.green)
-                                        .help("Pre-release")
-                                } else {
-                                    Image(systemName: "testtube.2")
-                                        .font(.title3)
-                                        .foregroundStyle(.green)
-                                        .help("Pre-release")
-                                }
-                            }
-
-                            // App Store button (App Store only)
-                            if app.source == .appStore, let appStoreURL = app.appStoreURL {
-                                Button {
-                                    openInAppStore(urlString: appStoreURL)
-                                } label: {
-                                    Image(systemName: ifOSBelow(macOS: 14) ? "cart.fill" : "storefront.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-                                }
-                                .buttonStyle(.plain)
-                                .help("View in App Store")
-                                .id(app.id)
-                            }
-
-                            if app.officialUpdateURL != nil {
-                                Button {
-                                    updateManager.openOfficialUpdatePage(for: app)
-                                } label: {
-                                    Image(systemName: "globe")
-                                        .font(.title3)
-                                        .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Official Update Page")
-                            }
-
-                            // Unsupported indicator
-                            if app.source == .unsupported {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.orange)
-                                    .help("Unsupported")
-                            }
-
-                            if app.source == .managed {
-                                Image(systemName: "arrow.up.forward.app.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.blue)
-                                    .help("Managed by the app or its vendor")
-                            }
-
-                            Spacer()
-
-                            HStack(spacing: 8) {
-                                // Status view (leading edge of button)
-                                statusView(for: app)
-
-                                // Action button (right edge)
-                                buildExpandableActionButton(for: app)
-                                    .id(app.id)
-                            }
-
-                        }
-
-                        // Version info with build numbers
-                        buildVersionText(for: app, colorScheme: colorScheme)
-                            .font(.title3)
-                            .help(buildNumberTooltip(for: app) ?? "")
-
-                        // Non-primary region warning
-                        if isNonPrimaryRegion, let region = app.foundInRegion {
-                            Text("Found in \(region) App Store. Open in App Store to update.")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
-            }
+            updateHeader(for: app)
+            statusView(for: app)
 
             Divider()
 
@@ -302,11 +181,10 @@ struct UpdateDetailView: View {
                 .padding(.horizontal, 5)
                 .id(app.id)
 
-                // Metadata row at bottom
-                Divider()
-
-                metadataRow(for: app)
-                    .id(app.id)
+                if app.releaseDate != nil || app.releaseNotesLink != nil {
+                    Divider()
+                    releaseMetadata(for: app)
+                }
             }
 
             Spacer()
@@ -323,8 +201,7 @@ struct UpdateDetailView: View {
         .onAppear {
             loadCasksForAdoption()
         }
-        .onChange(of: appId) { newAppId in
-            // Clear cask search state when switching apps
+        .onChange(of: self.app?.id) { _ in
             matchingCasks = []
             selectedCaskToken = nil
             manualEntry = ""
@@ -332,133 +209,206 @@ struct UpdateDetailView: View {
             isAdopting = false
             adoptionError = nil
             isSearchingCasks = false
+            loadCasksForAdoption()
+        }
+    }
 
-            // Re-trigger cask search for new unsupported app
-            // Use Task to allow SwiftUI to update with new app first
-            Task {
-                // Look up the new app directly from updateManager
-                if let newApp = updateManager.updatesBySource.values
-                    .flatMap({ $0 })
-                    .first(where: { $0.id == newAppId }),
-                   newApp.source == .unsupported {
-                    await MainActor.run {
-                        searchForMatchingCasks(for: newApp)
-                    }
+    private func updateHeader(for app: UpdateableApp) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    appIdentity(for: app)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 0)
+                    headerActions(for: app)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    appIdentity(for: app)
+                    headerActions(for: app)
+                }
+            }
+
+            if isNonPrimaryRegion, let region = app.foundInRegion {
+                Text("Found in \(region) App Store. Open in App Store to update.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private func appIdentity(for app: UpdateableApp) -> some View {
+        HStack(spacing: 14) {
+            Group {
+                if let icon = app.appInfo.appIcon {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "app")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.quaternary)
+                }
+            }
+            .frame(width: 60, height: 60)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: app.appInfo.appName)
+                    .font(.title.bold())
+                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+                    .lineLimit(2)
+                buildVersionText(for: app, colorScheme: colorScheme)
+                    .font(.callout.monospacedDigit())
+                    .help(buildNumberTooltip(for: app) ?? "")
+                if app.source != .current {
+                    sourceControl(for: app)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func metadataRow(for app: UpdateableApp) -> some View {
-        HStack(spacing: 0) {
-            // Released date
-            HStack(spacing: 0) {
-                Spacer()
-                if let date = app.releaseDate {
-                    Text(formatDate(date))
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                } else {
-                    Text("No Release Date")
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                }
-                Spacer()
-            }
-
-            // Source
-            HStack(spacing: 0) {
-                Spacer()
-                HStack(spacing: 4) {
-                    Text(app.source.title)
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                    if app.isIOSApp {
-                        Text(verbatim: "(iOS)")
-                            .font(.caption)
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
+    private func sourceControl(for app: UpdateableApp) -> some View {
+        if sourceOptions.count > 1 {
+            Menu {
+                ForEach(sourceOptions) { candidate in
+                    let title = candidate.availableVersion.map { "\(candidate.source.title) · \($0)" } ?? candidate.source.title
+                    Button {
+                        selectedUpdateID = candidate.id == item.primaryApp?.id ? nil : candidate.id
+                    } label: {
+                        if candidate.id == app.id {
+                            Label(title, systemImage: "checkmark")
+                        } else {
+                            Text(verbatim: title)
+                        }
                     }
                 }
-                Spacer()
+            } label: {
+                Text(app.source.title)
+                    .font(.caption)
             }
-
-            // Changelog
-            HStack(spacing: 0) {
-                Spacer()
-                if let link = app.releaseNotesLink, let url = URL(string: link) {
-                    Link(destination: url) {
-                        Text("View Changelog")
-                            .font(.subheadline)
-                            .foregroundStyle(.blue)
-                    }
-                    .buttonStyle(.plain)
-                } else if ReleaseNotesProcessor.hasContent(app.fetchedReleaseNotes) ||
-                            ReleaseNotesProcessor.hasContent(app.releaseDescription) {
-                    Text("Release Notes")
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-                } else {
-                    Text("No Changelog")
-                        .font(.subheadline)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(sourceOptions.contains { candidate in
+                switch candidate.status {
+                case .checking, .downloading, .extracting, .installing, .verifying: return true
+                default: return false
                 }
-                Spacer()
+            })
+            .help("Update Source")
+        } else {
+            HStack(spacing: 5) {
+                Text(app.source.title)
+                if app.isIOSApp {
+                    Text(verbatim: "· iOS")
+                }
+                if app.isPreRelease {
+                    Text("Pre-release")
+                }
             }
-            .id(app.id)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 5)
+    }
+
+    @ViewBuilder
+    private func headerActions(for app: UpdateableApp) -> some View {
+        let action = buildExpandableActionButton(for: app).id(app.id)
+        if app.source.isExternalUpdate, !app.canInstallNatively, app.officialUpdateURL != nil {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    action
+                    officialPageButton(for: app)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    action
+                    officialPageButton(for: app)
+                }
+            }
+        } else {
+            action
+        }
+    }
+
+    private func officialPageButton(for app: UpdateableApp) -> some View {
+        Button {
+            updateManager.openOfficialUpdatePage(for: app)
+        } label: {
+            Label("Official Update Page", systemImage: "arrow.up.right")
+        }
+        .buttonStyle(.bordered)
+        .fixedSize()
+    }
+
+    private func releaseMetadata(for app: UpdateableApp) -> some View {
+        HStack(spacing: 12) {
+            if let date = app.releaseDate {
+                Text(formatDate(date))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let link = app.releaseNotesLink, let url = URL(string: link) {
+                Link("View Changelog", destination: url)
+            }
+        }
+        .font(.subheadline)
     }
 
     @ViewBuilder
     private func statusView(for app: UpdateableApp) -> some View {
         switch app.status {
         case .checking, .downloading, .extracting, .installing, .verifying:
-            HStack(spacing: 6) {
-                Text(statusText(for: app.status))
-                    .font(.caption)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                CircularProgressView(
-                    progress: app.progress,
-                    size: 20,
-                    lineWidth: 5
-                )
+            HStack(spacing: 12) {
+                Text(progressTitle(for: app.status))
+                Spacer()
+                if app.progress > 0 {
+                    ProgressView(value: app.progress)
+                        .frame(maxWidth: 160)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
+            .font(.callout)
+            .padding(12)
         case .completed:
-            Text(statusText(for: app.status))
-                .font(.caption)
+            Label("Completed", systemImage: "checkmark.circle.fill")
+                .font(.callout)
                 .foregroundStyle(.green)
-        case .failed:
-            Text(statusText(for: app.status))
-                .font(.caption)
-                .foregroundStyle(.red)
+        case .manualInstallation(let message):
+            updateMessage("Manual Update", message: message, symbol: "arrow.up.forward.app", tint: .orange)
+        case .failed(let message):
+            updateMessage("Update Failed", message: message, symbol: "exclamationmark.triangle.fill", tint: .red)
         case .idle:
             EmptyView()
         }
     }
 
-    @ViewBuilder
-    private func actionButton(for app: UpdateableApp) -> some View {
-        Button {
-            if app.isIOSApp, let appStoreURL = app.appStoreURL {
-                openInAppStore(urlString: appStoreURL)
-            } else if isNonPrimaryRegion, let appStoreURL = app.appStoreURL {
-                openInAppStore(urlString: appStoreURL)
-            } else {
-                Task { await updateManager.updateApp(app) }
+    private func updateMessage(_ title: LocalizedStringKey, message: String, symbol: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                Text(verbatim: message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
-        } label: {
-            Text(app.source.isExternalUpdate && !app.canInstallNatively ? "Open App" :
-                 app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update")
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.green)
-        .foregroundStyle(.white)
-        .clipShape(Capsule())
-        .disabled(!updateManager.canStartUpdate(app))
-        .opacity(updateManager.canStartUpdate(app) ? 1.0 : 0.5)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func buildExpandableActionButton(for app: UpdateableApp) -> ExpandableActionButton {
@@ -548,10 +498,9 @@ struct UpdateDetailView: View {
         // Apps with updates: Update (primary) + Skip + Hide + Adopt (secondary)
         else {
             let primaryAction = ActionButtonItem(
-                title: app.source.isExternalUpdate && !app.canInstallNatively ? String(localized: "Open App") :
-                       app.source == .appStore || app.isIOSApp || isNonPrimaryRegion ? "Update in App Store" : "Update",
+                title: updateActionTitle(for: app),
                 foregroundColor: .white,
-                backgroundColor: .green,
+                backgroundColor: app.canUpdate ? ThemeColors.shared(for: colorScheme).accent : .blue,
                 isDisabled: !updateManager.canStartUpdate(app),
                 action: {
                     if app.isIOSApp, let appStoreURL = app.appStoreURL {
@@ -569,7 +518,7 @@ struct UpdateDetailView: View {
 
             var secondaryActions: [ActionButtonItem] = []
 
-            if app.officialUpdateURL != nil {
+            if app.canInstallNatively, app.officialUpdateURL != nil {
                 secondaryActions.append(ActionButtonItem(
                     title: "Official Update Page",
                     foregroundColor: ThemeColors.shared(for: colorScheme).accent,
@@ -633,10 +582,16 @@ struct UpdateDetailView: View {
         }
     }
 
-    private func statusText(for status: UpdateStatus) -> String {
+    private func updateActionTitle(for app: UpdateableApp) -> String {
+        if app.source.isExternalUpdate {
+            return app.canInstallNatively ? String(localized: "Verify and Update") : String(localized: "Open App")
+        }
+        return app.source == .appStore || app.isIOSApp || isNonPrimaryRegion
+            ? String(localized: "Update in App Store") : String(localized: "Update")
+    }
+
+    private func progressTitle(for status: UpdateStatus) -> LocalizedStringKey {
         switch status {
-        case .idle:
-            return ""
         case .checking:
             return "Checking..."
         case .downloading:
@@ -646,11 +601,9 @@ struct UpdateDetailView: View {
         case .installing:
             return "Installing..."
         case .verifying:
-            return "Verifying installation..."
-        case .completed:
-            return "Completed"
-        case .failed(let message):
-            return "Failed: \(message)"
+            return "Verifying Update…"
+        default:
+            return ""
         }
     }
 
@@ -678,7 +631,7 @@ struct UpdateDetailView: View {
             availableVersion.stripBrewRevisionSuffix() : availableVersion
 
         // Full version display with build numbers for detail view
-        if app.source == .sparkle {
+        if app.source == .sparkle || (app.source.isExternalUpdate && app.availableBuildNumber != nil) {
             let installedBuild = app.appInfo.appBuildNumber
             let availableBuild = app.availableBuildNumber
 
@@ -993,11 +946,6 @@ struct UpdateDetailView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 520)
 
-            Button("Open App") {
-                Task { await updateManager.updateApp(app) }
-            }
-            .buttonStyle(.borderedProminent)
-
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1123,7 +1071,7 @@ struct UpdateDetailView: View {
     }
 
     private func loadCasksForAdoption() {
-        guard let app = app else { return }
+        guard let app, app.source == .unsupported else { return }
 
         // Load casks if not already loaded
         if brewManager.allAvailableCasks.isEmpty {

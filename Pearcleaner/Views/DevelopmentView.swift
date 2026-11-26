@@ -117,30 +117,8 @@ struct EnvironmentCleanerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-
-                TextField("Search...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .foregroundStyle(ThemeColors.shared(for: colorScheme).primaryText)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .foregroundStyle(ThemeColors.shared(for: colorScheme).accent)
-            .controlGroup(Capsule(style: .continuous), level: .primary)
-            .padding(.top, 5)
+            UtilitySearchField(prompt: "Search Developer Files", text: $searchText)
+                .padding(.top, 5)
 
             if let selectedEnvironment = appState.selectedEnvironment, filteredPaths.count > 0 {
 
@@ -264,16 +242,15 @@ struct EnvironmentCleanerView: View {
                     }
                 }
                 .scrollIndicators(scrollIndicators ? .automatic : .never)
+            } else if appState.selectedEnvironment == nil {
+                UtilityPageStatus(title: "Select an environment to view stored cache", systemImage: "hammer")
+            } else if isLoading {
+                UtilityPageStatus(title: "Loading...")
+            } else if !searchText.isEmpty {
+                UtilityPageStatus(title: "No matching files", systemImage: "magnifyingglass",
+                                  action: ("Clear Search", { searchText = "" }))
             } else {
-                VStack(alignment: .center) {
-                    Spacer()
-                    Text("Select an environment to view stored cache")
-                        .font(.title2)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-
+                UtilityPageStatus(title: "No developer files found", systemImage: "folder")
             }
 
         }

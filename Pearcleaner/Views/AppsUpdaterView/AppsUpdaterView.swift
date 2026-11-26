@@ -79,8 +79,8 @@ struct AppsUpdaterView: View {
 
     private var sidebarCategories: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] {
         var cats: [(String, (UpdaterListItem) -> Bool, Bool, Bool)] = [
-            (String(localized: "Update Available"), { $0.section == .available }, true, [UpdateSource.homebrew, .sparkle, .official, .electron, .catalog].contains { updateManager.scanningSources.contains($0) }),
-            (String(localized: "External Update"), { $0.section == .external }, true, [UpdateSource.appStore, .electron, .official, .catalog].contains { updateManager.scanningSources.contains($0) }),
+            (String(localized: "Install in Onglai"), { $0.section == .available }, true, [UpdateSource.homebrew, .sparkle, .official, .electron, .catalog].contains { updateManager.scanningSources.contains($0) }),
+            (String(localized: "Manual Update"), { $0.section == .external }, true, [UpdateSource.appStore, .electron, .official, .catalog].contains { updateManager.scanningSources.contains($0) }),
             (String(localized: "Error"), { $0.section == .attention }, true, false),
             (String(localized: "Check in App"), { $0.section == .unverified }, true, false)
         ]
@@ -132,8 +132,9 @@ struct AppsUpdaterView: View {
                                     )
                                 }
                             }
-                        } else if let app = selectedItem?.primaryApp {
-                            UpdateDetailView(appId: app.id)
+                        } else if let item = selectedItem, item.primaryApp != nil {
+                            UpdateDetailView(item: item)
+                                .id(item.id)
                         } else {
                             UpdaterOverviewView(
                                 directUpdateCount: directItems.count,
@@ -279,7 +280,7 @@ struct AppsUpdaterView: View {
 
     @ViewBuilder
     private var batchActionBar: some View {
-        if !directItems.isEmpty || !externalItems.isEmpty {
+        if !directItems.isEmpty || updateManager.isUpdatingAll {
             Divider()
             HStack(spacing: 12) {
                 if updateManager.isUpdatingAll {
@@ -289,10 +290,8 @@ struct AppsUpdaterView: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
                 } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Update all available apps")
-                            .font(.callout.weight(.medium))
-                    }
+                    Text("\(selectedDirectItems.count) of \(directItems.count) selected")
+                        .font(.callout.monospacedDigit())
                 }
 
                 Spacer()
@@ -301,7 +300,7 @@ struct AppsUpdaterView: View {
                     updateSelectedApps()
                 } label: {
                     Label(
-                        String(localized: "Update All"),
+                        String(localized: "Update Selected"),
                         systemImage: "arrow.down.circle.fill"
                     )
                 }
@@ -331,23 +330,18 @@ private struct UpdaterOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Updater")
-                        .font(.largeTitle.bold())
-                    Text("Perform updates on 3rd party apps, and more")
-                        .font(.callout)
-                        .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                }
+                Text("Updater")
+                    .font(.largeTitle.bold())
 
-                HStack(spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
                     UpdaterSummaryCard(
-                        title: "Update Available",
+                        title: "Install in Onglai",
                         count: directUpdateCount,
                         systemImage: "arrow.down.circle.fill",
                         tint: .blue
                     )
                     UpdaterSummaryCard(
-                        title: "External",
+                        title: "Manual Update",
                         count: externalUpdateCount,
                         systemImage: "macwindow",
                         tint: .purple
@@ -413,18 +407,6 @@ private struct UpdaterOverviewView: View {
                 .padding(18)
                 .background(ThemeColors.shared(for: colorScheme).secondaryBG.opacity(0.62), in: RoundedRectangle(cornerRadius: 14))
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("From source", systemImage: "point.3.connected.trianglepath.dotted")
-                        .font(.headline)
-                    HStack(spacing: 18) {
-                        Label("App Store", systemImage: "macwindow")
-                        Label("Homebrew", systemImage: "terminal")
-                        Label("Sparkle", systemImage: "sparkles")
-                        Label("Electron", systemImage: "bolt.fill")
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(32)
@@ -453,7 +435,7 @@ private struct UpdaterSummaryCard: View {
                 Text(title)
                     .font(.caption)
                     .foregroundStyle(ThemeColors.shared(for: colorScheme).secondaryText)
-                    .lineLimit(1)
+                    .lineLimit(2, reservesSpace: true)
             }
             Spacer(minLength: 0)
         }
