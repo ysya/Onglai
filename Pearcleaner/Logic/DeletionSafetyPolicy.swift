@@ -37,11 +37,7 @@ enum DeletionSafetyPolicy {
         onReadError: (Error, String) -> Void
     ) -> Set<URL> {
         let identifier = bundleIdentifier
-        let labels = identifier.split(separator: ".", omittingEmptySubsequences: false)
-        let validCharacters = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
-        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty && $0.allSatisfy(validCharacters.contains) }) else {
-            return []
-        }
+        guard isValidPreferenceIdentifier(identifier) else { return [] }
 
         let manager = FileManager.default
         var result = Set<URL>()
@@ -72,7 +68,8 @@ enum DeletionSafetyPolicy {
             }
         }
 
-        for library in [userLibrary, localLibrary].compactMap({ $0 }) {
+        let libraries = [userLibrary, localLibrary].compactMap { $0 }
+        for library in libraries {
             for directory in ["Application Support", "Caches", "Logs"] {
                 add(library.appendingPathComponent("\(directory)/\(identifier)"), directory: true)
             }
@@ -88,6 +85,28 @@ enum DeletionSafetyPolicy {
         var containerOwners: Set<String> = [identifier]
         var byHostOwners: Set<String> = [identifier]
         if let appBundle {
+            if let bundle = Bundle(url: appBundle), bundle.bundleIdentifier == identifier {
+                let sparkle = appBundle.appendingPathComponent("Contents/Frameworks/Sparkle.framework")
+                if let domain = bundle.infoDictionary?["SUDefaultsDomain"] as? String,
+                   domain.hasPrefix(identifier + "."), isValidPreferenceIdentifier(domain),
+                   isUnaliased(sparkle), (try? sparkle.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+                    add(userLibrary.appendingPathComponent("Preferences/\(domain).plist"), directory: false)
+                }
+
+                for library in libraries {
+                    let reports = library.appendingPathComponent("Logs/DiagnosticReports")
+                    for report in contents(of: reports) where report.pathExtension == "diag" && isUnaliased(report) {
+                        do {
+                            guard try report.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true,
+                                  try diagnosticReportBelongsToBundle(report, appBundle: appBundle) else { continue }
+                            add(report, directory: false)
+                        } catch {
+                            reportReadError(error, at: report)
+                        }
+                    }
+                }
+            }
+
             let plugins = appBundle.appendingPathComponent("Contents/PlugIns")
             for plugin in contents(of: plugins) where plugin.pathExtension == "appex" {
                 let info = plugin.appendingPathComponent("Contents/Info.plist")
@@ -149,6 +168,41 @@ enum DeletionSafetyPolicy {
             }
         }
         return result
+    }
+
+    private static func isValidPreferenceIdentifier(_ identifier: String) -> Bool {
+        let labels = identifier.split(separator: ".", omittingEmptySubsequences: false)
+        let validCharacters = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+        return labels.count >= 2 && labels.allSatisfy { !$0.isEmpty && $0.allSatisfy(validCharacters.contains) }
+    }
+
+    private static func diagnosticReportBelongsToBundle(_ report: URL, appBundle: URL) throws -> Bool {
+        // A macOS .diag header records the executable's path and identifier before the event details.
+        let file = try FileHandle(forReadingFrom: report)
+        defer { try? file.close() }
+        guard let prefix = try file.read(upToCount: 32 * 1024) else { return false }
+        let lines = String(decoding: prefix, as: UTF8.self).split(whereSeparator: \.isNewline)
+        guard lines.first?.hasPrefix("Date/Time:") == true,
+              let eventIndex = lines.firstIndex(where: { $0.hasPrefix("Event:") }) else { return false }
+        let header = lines[..<eventIndex]
+        let paths = header.filter { $0.hasPrefix("Path:") }
+        let identifiers = header.filter { $0.hasPrefix("Identifier:") }
+        guard paths.count == 1, identifiers.count == 1 else { return false }
+        let processPath = paths[0].dropFirst("Path:".count).trimmingCharacters(in: .whitespaces)
+        let identifier = identifiers[0].dropFirst("Identifier:".count).trimmingCharacters(in: .whitespaces)
+        let appPath = appBundle.standardizedFileURL.path
+        guard processPath.hasPrefix(appPath + "/Contents/"), !identifier.isEmpty else { return false }
+
+        let executable = URL(fileURLWithPath: processPath).standardizedFileURL
+        let macOS = executable.deletingLastPathComponent()
+        let contents = macOS.deletingLastPathComponent()
+        let processBundle = contents.deletingLastPathComponent()
+        guard executable.path == processPath, macOS.lastPathComponent == "MacOS", contents.lastPathComponent == "Contents",
+              processBundle.pathExtension == "app", isUnaliased(executable),
+              (try? executable.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
+              FileManager.default.isExecutableFile(atPath: executable.path),
+              let bundle = Bundle(url: processBundle), bundle.bundleIdentifier == identifier else { return false }
+        return bundle.infoDictionary?["CFBundleExecutable"] as? String == executable.lastPathComponent
     }
 
     // Microsoft and Discord document these product-specific data directories.

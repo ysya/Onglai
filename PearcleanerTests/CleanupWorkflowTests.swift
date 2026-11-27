@@ -100,6 +100,106 @@ final class CleanupWorkflowTests: XCTestCase {
         XCTAssertTrue(found.isEmpty)
     }
 
+    func testUninstallFindsOnlyTheDeclaredNamespacedSparklePreferences() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? manager.removeItem(at: root) }
+        let library = root.appendingPathComponent("Library")
+        let preferences = library.appendingPathComponent("Preferences")
+        let identifier = "com.example.Preview"
+        let domain = identifier + ".updates"
+        let updaterPreferences = preferences.appendingPathComponent(domain + ".plist")
+        try manager.createDirectory(at: preferences, withIntermediateDirectories: true)
+        for candidate in [domain, domain + ".backup", "com.example.updates"] {
+            try Data().write(to: preferences.appendingPathComponent(candidate + ".plist"))
+        }
+        let app = root.appendingPathComponent("Preview.app")
+        try makeUninstallBundle(at: app, executable: "Preview", identifier: identifier, extraInfo: ["SUDefaultsDomain": domain])
+        let sparkle = app.appendingPathComponent("Contents/Frameworks/Sparkle.framework")
+        try manager.createDirectory(at: sparkle, withIntermediateDirectories: true)
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: identifier, userLibrary: library, localLibrary: nil, appBundle: app
+        ) { _, _ in XCTFail("The fixture is readable") }
+
+        XCTAssertEqual(Set(found.map(\.path)), [updaterPreferences.path])
+
+        let foreignApp = root.appendingPathComponent("Foreign.app")
+        try makeUninstallBundle(at: foreignApp, executable: "Foreign", identifier: "org.example.foreign", extraInfo: ["SUDefaultsDomain": domain])
+        let foreignSparkle = foreignApp.appendingPathComponent("Contents/Frameworks/Sparkle.framework")
+        try manager.createDirectory(at: foreignSparkle, withIntermediateDirectories: true)
+        let foreign = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: "org.example.foreign", userLibrary: library, localLibrary: nil, appBundle: foreignApp
+        ) { _, _ in XCTFail("The fixture is readable") }
+        XCTAssertTrue(foreign.isEmpty)
+    }
+
+    func testUninstallMatchesAperitifReportsToTheExactEmbeddedExecutableAndIdentifier() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? manager.removeItem(at: root) }
+        let app = root.appendingPathComponent("Preview.app")
+        let identifier = "com.example.Preview"
+        let helperID = "org.chromium.Chromium.helper"
+        let name = "Chromium Helper (Aperitif)"
+        let helper = app.appendingPathComponent("Contents/Frameworks/Chromium Framework.framework/Versions/158/Helpers/\(name).app")
+        try makeUninstallBundle(at: app, executable: "Preview", identifier: identifier)
+        try makeUninstallBundle(at: helper, executable: name, identifier: helperID)
+        let executable = helper.appendingPathComponent("Contents/MacOS/\(name)").path
+        let userLibrary = root.appendingPathComponent("User/Library")
+        let localLibrary = root.appendingPathComponent("Library")
+        let userReports = userLibrary.appendingPathComponent("Logs/DiagnosticReports")
+        let localReports = localLibrary.appendingPathComponent("Logs/DiagnosticReports")
+        for directory in [userReports, localReports] {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        func writeReport(_ name: String, in directory: URL, executable: String, identifier: String) throws -> URL {
+            let file = directory.appendingPathComponent(name + ".diag")
+            let report = """
+            Date/Time:        2026-01-01 00:00:00.000 +0000
+            Report Version:   67
+
+            Command:          Chromium Helper (Aperitif)
+            Path:             \(executable)
+            Identifier:       \(identifier)
+
+            Event:            disk writes
+            """
+            try report.write(to: file, atomically: true, encoding: .utf8)
+            return file
+        }
+
+        let userReport = try writeReport("\(name)_user", in: userReports, executable: executable, identifier: helperID)
+        let localReport = try writeReport("\(name)_local", in: localReports, executable: executable, identifier: helperID)
+        _ = try writeReport("\(name)_other-app", in: localReports,
+                            executable: executable.replacingOccurrences(of: "/Preview.app/", with: "/Other.app/"), identifier: helperID)
+        _ = try writeReport("\(name)_other-identifier", in: localReports, executable: executable, identifier: "org.other.helper")
+        _ = try writeReport("\(name)_old-version", in: localReports,
+                            executable: executable.replacingOccurrences(of: "/Versions/158/", with: "/Versions/157/"), identifier: helperID)
+        _ = try writeReport("\(name)_wrong-executable", in: localReports, executable: executable + "-backup", identifier: helperID)
+        try manager.createSymbolicLink(at: userReports.appendingPathComponent("\(name)_link.diag"), withDestinationURL: localReport)
+
+        let found = DeletionSafetyPolicy.ownedLibraryFiles(
+            bundleIdentifier: identifier, userLibrary: userLibrary, localLibrary: localLibrary, appBundle: app
+        ) { _, _ in XCTFail("The fixture is readable") }
+
+        XCTAssertEqual(Set(found.map(\.path)), Set([userReport.path, localReport.path]))
+    }
+
+    private func makeUninstallBundle(at bundle: URL, executable: String, identifier: String, extraInfo: [String: Any] = [:]) throws {
+        let executableURL = bundle.appendingPathComponent("Contents/MacOS/\(executable)")
+        try FileManager.default.createDirectory(at: executableURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: executableURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+        var info = extraInfo
+        info["CFBundleExecutable"] = executable
+        info["CFBundleIdentifier"] = identifier
+        info["CFBundlePackageType"] = "APPL"
+        let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
+        try plist.write(to: bundle.appendingPathComponent("Contents/Info.plist"))
+    }
+
     func testUninstallMovesTheAppAfterAllSelectedData() {
         let app = URL(fileURLWithPath: "/Applications/Example.app")
         let cache = URL(fileURLWithPath: "/tmp/example-cache")
